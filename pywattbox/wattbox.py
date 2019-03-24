@@ -15,31 +15,31 @@ class Commands(IntEnum):
 
 class WattBox(object):
     # Info, set once
-    hostname = ''
-    serial_number = ''
     hardware_version = None
     has_ups = False
+    hostname = ''
     number_outlets = 0
+    serial_number = ''
 
     # Status values
+    audible_alarm = False
     auto_reboot = False
     cloud_status = False
-    audible_alarm = False
-    power_lost = False
     mute = False
+    power_lost = False
 
     # Power values
-    safe_voltage_status = True
-    voltage_value = 0  # In volts
     current_value = 0  # In Amps
     power_value = 0    # In watts
-    est_run_time = 0   # In minutes
+    safe_voltage_status = True
+    voltage_value = 0  # In volts
 
     # Battery values
-    battery_test = False
-    battery_health = False
     battery_charge = 0 # In percent
+    battery_health = False
     battery_load = 0   # In percent
+    battery_test = False
+    est_run_time = 0   # In minutes
 
     outlets = []
 
@@ -55,11 +55,11 @@ class WattBox(object):
         soup = BeautifulSoup(result.content, 'xml')
 
         # Set these values once, should never change
-        self.hostname = soup.host_name.text
-        self.serial_number = soup.serial_number.text
         self.hardware_version = soup.request.hardware_version.text
         self.has_ups = bool(soup.hasUPS.text)
+        self.hostname = soup.host_name.text
         self.number_outlets = int(self.hardware_version.split('-')[-1])
+        self.serial_number = soup.serial_number.text
 
         # Initialize outlets
         for i in range(1, self.number_outlets + 1):
