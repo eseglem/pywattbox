@@ -19,6 +19,7 @@ class WattBox(object):
     serial_number = ''
     hardware_version = None
     has_ups = False
+    number_outlets = 0
 
     # Status values
     auto_reboot = False
@@ -32,7 +33,7 @@ class WattBox(object):
     voltage_value = 0  # In volts
     current_value = 0  # In Amps
     power_value = 0    # In watts
-    est_rum_time = 0   # In minutes
+    est_run_time = 0   # In minutes
 
     # Battery values
     battery_test = False
@@ -94,6 +95,7 @@ class WattBox(object):
             self.battery_health = soup.battery_health.text == '1'
             self.battery_load = int(soup.battery_load.text)
             self.battery_test = soup.battery_test.text == '1'
+            self.est_run_time = int(soup.est_run_time.text)
 
         outlet_methods = [_ == '1' for _ in soup.outlet_method.text.split(',')]
         outlet_names = soup.outlet_name.text.split(',')
