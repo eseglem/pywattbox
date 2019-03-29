@@ -55,11 +55,17 @@ class WattBox(object):
         soup = BeautifulSoup(result.content, 'xml')
 
         # Set these values once, should never change
-        self.hardware_version = soup.request.hardware_version.text
-        self.has_ups = bool(soup.hasUPS.text)
-        self.hostname = soup.host_name.text
-        self.number_outlets = int(self.hardware_version.split('-')[-1])
-        self.serial_number = soup.serial_number.text
+        if soup.hardware_version is not None:
+            self.hardware_version = soup.hardware_version.text
+        if soup.hasUPS is not None:
+            self.has_ups = soup.hasUPS.text == '1'
+        if soup.host_name is not None:
+            self.hostname = soup.host_name.text
+        if soup.serial_number is not None:
+            self.serial_number = soup.serial_number.text
+
+        if self.hardware_version is not None:
+            self.number_outlets = int(self.hardware_version.split('-')[-1])
 
         # Initialize outlets
         for i in range(1, self.number_outlets + 1):
@@ -76,30 +82,54 @@ class WattBox(object):
         soup = BeautifulSoup(result.content, 'xml')
 
         # Status values
-        self.audible_alarm = soup.audible_alarm.text == '1'
-        self.auto_reboot = soup.auto_reboot.text == '1'
-        self.cloud_status = soup.cloud_status.text == '1'
-        self.mute = soup.mute.text == '1'
-        self.power_lost = soup.power_lost.text == '1'
-        self.safe_voltage_status = soup.safe_voltage_status.text == '1'
+        if soup.audible_alarm is not None:
+            self.audible_alarm = soup.audible_alarm.text == '1'
+        if soup.auto_reboot is not None:
+            self.auto_reboot = soup.auto_reboot.text == '1'
+        if soup.cloud_status is not None:
+            self.cloud_status = soup.cloud_status.text == '1'
+        if soup.mute is not None:
+            self.mute = soup.mute.text == '1'
+        if soup.power_lost is not None:
+            self.power_lost = soup.power_lost.text == '1'
+        if soup.safe_voltage_status is not None:
+            self.safe_voltage_status = soup.safe_voltage_status.text == '1'
 
         # Power values
-        self.power_value = int(soup.power_value.text)
+        if soup.power_value is not None:
+            self.power_value = int(soup.power_value.text)
         # Api returns these two as tenths
-        self.current_value = int(soup.current_value.text) / 10
-        self.voltage_value = int(soup.voltage_value.text) / 10
+        if soup.current_value is not None:
+            self.current_value = int(soup.current_value.text) / 10
+        if soup.voltage_value is not None:
+            self.voltage_value = int(soup.voltage_value.text) / 10
 
         # Battery values
         if self.has_ups:
-            self.battery_charge = int(soup.battery_charge.text)
-            self.battery_health = soup.battery_health.text == '1'
-            self.battery_load = int(soup.battery_load.text)
-            self.battery_test = soup.battery_test.text == '1'
-            self.est_run_time = int(soup.est_run_time.text)
+            if soup.battery_charge is not None:
+                self.battery_charge = int(soup.battery_charge.text)
+            if soup.battery_health is not None:
+                self.battery_health = soup.battery_health.text == '1'
+            if soup.battery_load is not None:
+                self.battery_load = int(soup.battery_load.text)
+            if soup.battery_test is not None:
+                self.battery_test = soup.battery_test.text == '1'
+            if soup.est_run_time is not None:
+                self.est_run_time = int(soup.est_run_time.text)
 
-        outlet_methods = [_ == '1' for _ in soup.outlet_method.text.split(',')]
-        outlet_names = soup.outlet_name.text.split(',')
-        outlet_statuses = [_ == '1' for _ in soup.outlet_status.text.split(',')]
+        if soup.outlet_method is not None:
+            outlet_methods = [_ == '1' for _ in soup.outlet_method.text.split(',')]
+        else:
+            outlet_methods = [None] * self.number_outlets
+        if soup.outlet_name is not None:
+            outlet_names = soup.outlet_name.text.split(',')
+        else:
+            outlet_names = [None] * self.number_outlets
+        if soup.outlet_status:
+            outlet_statuses = [_ == '1' for _ in soup.outlet_status.text.split(',')]
+        else:
+            outlet_statuses = [None] * self.number_outlets
+
         for i in range(self.number_outlets):
             self.outlets[i].method = outlet_methods[i]
             self.outlets[i].name = outlet_names[i]
@@ -143,6 +173,9 @@ class Outlet(object):
 
     def turn_off(self):
         self.wattbox.send_command(self.index, Commands.OFF)
+
+    def reset(self):
+        self.wattbox.send_command(self.index, Commands.RESET)
 
     def __str__(self):
         return "{} ({}): {}".format(self.name, self.index, self.status)
