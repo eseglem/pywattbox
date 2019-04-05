@@ -68,6 +68,7 @@ class WattBox(object):
             self.number_outlets = int(self.hardware_version.split('-')[-1])
 
         # Initialize outlets
+        self.outlets.append(MasterSwitch(self))
         for i in range(1, self.number_outlets + 1):
             self.outlets.append(Outlet(i, self))
 
@@ -130,11 +131,17 @@ class WattBox(object):
         else:
             outlet_statuses = [None] * self.number_outlets
 
-        for i in range(self.number_outlets):
-            self.outlets[i].method = outlet_methods[i]
-            self.outlets[i].name = outlet_names[i]
-            self.outlets[i].status = outlet_statuses[i]
+        for i in range(1, self.number_outlets + 1):
+            self.outlets[i].method = outlet_methods[i - 1]
+            self.outlets[i].name = outlet_names[i - 1]
+            self.outlets[i].status = outlet_statuses[i - 1]
 
+        # Gather statuses for outlets that have method on
+        statuses = [outlet.status for outlet in self.outlets[1:] if outlet.method]
+        # Master switch is on if all those outlets are on
+        self.outlets[0].status = all(statuses)
+
+    # Will send the command to the specific outlet. 
     def send_command(self, outlet, command):
         _ = requests.get(
             "{}/control.cgi?outlet={}&command={}".format(
@@ -147,7 +154,7 @@ class WattBox(object):
 
     # Simulates pressing the master switch.
     # Will send the command to all outlets with master switch enabled.
-    def master_switch(self, command):
+    def send_master_command(self, command):
         if command not in (Commands.ON, Commands.OFF):
             raise ValueError(
                 "Command ({}) can only be `Commands.ON` or `Commands.OFF`.".format(command)
@@ -179,3 +186,14 @@ class Outlet(object):
 
     def __str__(self):
         return "{} ({}): {}".format(self.name, self.index, self.status)
+
+class MasterSwitch(Outlet):
+    def __init__(self, wattbox):
+        super().__init__(0, wattbox)
+        self.name = 'Master Switch'
+    
+    def turn_on(self):
+        self.wattbox.send_master_command(Commands.ON)
+
+    def turn_off(self):
+        self.wattbox.send_master_command(Commands.OFF)
