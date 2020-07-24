@@ -77,7 +77,7 @@ class WattBox(object):
 
     def update(self):
         result = requests.get(
-            "{self.base_host}/wattbox_info.xml",
+            f"{self.base_host}/wattbox_info.xml",
             auth=HTTPBasicAuth(self.user, self.password),
         )
         soup = BeautifulSoup(result.content, "xml")

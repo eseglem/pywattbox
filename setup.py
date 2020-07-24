@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name="pywattbox",
-    version="0.3.1",
+    version="0.3.2",
     author="Erik Seglem",
     author_email="erik.seglem@gmail.com",
     description="A python wrapper for the WattBox API.",
