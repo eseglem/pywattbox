@@ -15,7 +15,7 @@ class Commands(IntEnum):
 
 class WattBox(object):
     def __init__(self, ip, port=80, user="wattbox", password="wattbox"):
-        self.base_host = "http://{}:{}".format(ip, port)
+        self.base_host = f"http://{ip}:{port}"
         self.user = user
         self.password = password
 
@@ -49,7 +49,7 @@ class WattBox(object):
         self.outlets = []
 
         result = requests.get(
-            "{}/wattbox_info.xml".format(self.base_host),
+            f"{self.base_host}/wattbox_info.xml",
             auth=HTTPBasicAuth(self.user, self.password),
         )
         soup = BeautifulSoup(result.content, "xml")
@@ -77,7 +77,7 @@ class WattBox(object):
 
     def update(self):
         result = requests.get(
-            "{}/wattbox_info.xml".format(self.base_host),
+            "{self.base_host}/wattbox_info.xml",
             auth=HTTPBasicAuth(self.user, self.password),
         )
         soup = BeautifulSoup(result.content, "xml")
@@ -144,9 +144,7 @@ class WattBox(object):
     # Will send the command to the specific outlet.
     def send_command(self, outlet, command):
         _ = requests.get(
-            "{}/control.cgi?outlet={}&command={}".format(
-                self.base_host, outlet, command
-            ),
+            f"{self.base_host}/control.cgi?outlet={outlet}&command={command}",
             auth=HTTPBasicAuth(self.user, self.password),
         )
 
@@ -164,9 +162,7 @@ class WattBox(object):
                 self.send_command(outlet.index, command)
 
     def __str__(self):
-        return "{} ({}): {}".format(
-            self.hostname, self.base_host, self.hardware_version
-        )
+        return f"{self.hostname} ({self.base_host}): {self.hardware_version}"
 
 
 class Outlet(object):
@@ -187,7 +183,7 @@ class Outlet(object):
         self.wattbox.send_command(self.index, Commands.RESET)
 
     def __str__(self):
-        return "{} ({}): {}".format(self.name, self.index, self.status)
+        return f"{self.name} ({self.index}): {self.status}"
 
 
 class MasterSwitch(Outlet):
