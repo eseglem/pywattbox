@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from enum import IntEnum
+from typing import List, Optional, Union
 
 import requests
 from bs4 import BeautifulSoup
@@ -14,39 +17,41 @@ class Commands(IntEnum):
 
 
 class WattBox(object):
-    def __init__(self, ip, port=80, user="wattbox", password="wattbox"):
-        self.base_host = f"http://{ip}:{port}"
-        self.user = user
-        self.password = password
+    def __init__(
+        self, ip: str, port: int = 80, user: str = "wattbox", password: str = "wattbox"
+    ) -> None:
+        self.base_host: str = f"http://{ip}:{port}"
+        self.user: str = user
+        self.password: str = password
 
         # Info, set once
-        self.hardware_version = None
-        self.has_ups = False
-        self.hostname = ""
-        self.number_outlets = 0
-        self.serial_number = ""
+        self.hardware_version: Optional[str] = None
+        self.has_ups: bool = False
+        self.hostname: str = ""
+        self.number_outlets: int = 0
+        self.serial_number: str = ""
 
         # Status values
-        self.audible_alarm = False
-        self.auto_reboot = False
-        self.cloud_status = False
-        self.mute = False
-        self.power_lost = False
+        self.audible_alarm: bool = False
+        self.auto_reboot: bool = False
+        self.cloud_status: bool = False
+        self.mute: bool = False
+        self.power_lost: bool = False
 
         # Power values
-        self.current_value = 0  # In Amps
-        self.power_value = 0  # In watts
-        self.safe_voltage_status = True
-        self.voltage_value = 0  # In volts
+        self.current_value: float = 0.0  # In Amps
+        self.power_value: float = 0.0  # In watts
+        self.safe_voltage_status: bool = True
+        self.voltage_value: float = 0.0  # In volts
 
         # Battery values
-        self.battery_charge = 0  # In percent
-        self.battery_health = False
-        self.battery_load = 0  # In percent
-        self.battery_test = False
-        self.est_run_time = 0  # In minutes
+        self.battery_charge: int = 0  # In percent
+        self.battery_health: bool = False
+        self.battery_load: int = 0  # In percent
+        self.battery_test: bool = False
+        self.est_run_time: int = 0  # In minutes
 
-        self.outlets = []
+        self.outlets: List[Outlet] = []
 
         result = requests.get(
             f"{self.base_host}/wattbox_info.xml",
@@ -64,8 +69,15 @@ class WattBox(object):
         if soup.serial_number is not None:
             self.serial_number = soup.serial_number.text
 
-        if self.hardware_version is not None:
+        # Some hardware versions have plugs that are always on, so using the
+        # hardware version doesn't work well. Just split the outlests.
+        # Additional logic shouldn't ever get used, but there just in case
+        if soup.outlet_status is not None:
+            self.number_outlets = len(soup.outlet_status.text.split(","))
+        elif self.hardware_version is not None:
             self.number_outlets = int(self.hardware_version.split("-")[-1])
+        else:
+            self.number_outlets = 0
 
         # Initialize outlets
         self.outlets.append(MasterSwitch(self))
@@ -75,7 +87,7 @@ class WattBox(object):
         # Update all the other values
         self.update()
 
-    def update(self):
+    def update(self) -> None:
         result = requests.get(
             f"{self.base_host}/wattbox_info.xml",
             auth=HTTPBasicAuth(self.user, self.password),
@@ -118,31 +130,39 @@ class WattBox(object):
             if soup.est_run_time is not None:
                 self.est_run_time = int(soup.est_run_time.text)
 
+        outlet_methods: Union[List[bool], List[None]]
         if soup.outlet_method is not None:
             outlet_methods = [_ == "1" for _ in soup.outlet_method.text.split(",")]
         else:
             outlet_methods = [None] * self.number_outlets
+
+        outlet_names: Union[List[str], List[None]]
         if soup.outlet_name is not None:
             outlet_names = soup.outlet_name.text.split(",")
         else:
             outlet_names = [None] * self.number_outlets
+
+        outlet_statuses: Union[List[bool], List[None]]
         if soup.outlet_status:
             outlet_statuses = [_ == "1" for _ in soup.outlet_status.text.split(",")]
         else:
             outlet_statuses = [None] * self.number_outlets
 
+        # self.outlets[0] is master so start at 1
         for i in range(1, self.number_outlets + 1):
             self.outlets[i].method = outlet_methods[i - 1]
             self.outlets[i].name = outlet_names[i - 1]
             self.outlets[i].status = outlet_statuses[i - 1]
 
         # Gather statuses for outlets that have method on
-        statuses = [outlet.status for outlet in self.outlets[1:] if outlet.method]
+        statuses: List[Optional[bool]] = [
+            outlet.status for outlet in self.outlets[1:] if outlet.method
+        ]
         # Master switch is on if all those outlets are on
         self.outlets[0].status = all(statuses)
 
     # Will send the command to the specific outlet.
-    def send_command(self, outlet, command):
+    def send_command(self, outlet, command) -> None:
         _ = requests.get(
             f"{self.base_host}/control.cgi?outlet={outlet}&command={command}",
             auth=HTTPBasicAuth(self.user, self.password),
@@ -150,7 +170,7 @@ class WattBox(object):
 
     # Simulates pressing the master switch.
     # Will send the command to all outlets with master switch enabled.
-    def send_master_command(self, command):
+    def send_master_command(self, command) -> None:
         if command not in (Commands.ON, Commands.OFF):
             raise ValueError(
                 "Command ({}) can only be `Commands.ON` or `Commands.OFF`.".format(
@@ -166,33 +186,33 @@ class WattBox(object):
 
 
 class Outlet(object):
-    def __init__(self, index, wattbox):
+    def __init__(self, index, wattbox) -> None:
         self.index = index
-        self.method = None
-        self.name = ""
-        self.status = None
+        self.method: Optional[bool] = None
+        self.name: Optional[str] = ""
+        self.status: Optional[bool] = None
         self.wattbox = wattbox
 
-    def turn_on(self):
+    def turn_on(self) -> None:
         self.wattbox.send_command(self.index, Commands.ON)
 
-    def turn_off(self):
+    def turn_off(self) -> None:
         self.wattbox.send_command(self.index, Commands.OFF)
 
-    def reset(self):
+    def reset(self) -> None:
         self.wattbox.send_command(self.index, Commands.RESET)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.name} ({self.index}): {self.status}"
 
 
 class MasterSwitch(Outlet):
-    def __init__(self, wattbox):
+    def __init__(self, wattbox) -> None:
         super().__init__(0, wattbox)
         self.name = "Master Switch"
 
-    def turn_on(self):
+    def turn_on(self) -> None:
         self.wattbox.send_master_command(Commands.ON)
 
-    def turn_off(self):
+    def turn_off(self) -> None:
         self.wattbox.send_master_command(Commands.OFF)
