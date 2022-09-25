@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import logging
 from enum import IntEnum
 from typing import List, Optional, Union
 
-import requests
+import httpx
 from bs4 import BeautifulSoup
-from requests.auth import HTTPBasicAuth
+
+logger = logging.getLogger("pywattbox")
 
 
 class Commands(IntEnum):
@@ -17,10 +19,8 @@ class Commands(IntEnum):
 
 
 class WattBox(object):
-    def __init__(
-        self, ip: str, port: int = 80, user: str = "wattbox", password: str = "wattbox"
-    ) -> None:
-        self.base_host: str = f"http://{ip}:{port}"
+    def __init__(self, host: str, user: str, password: str, port: int = 80) -> None:
+        self.base_host: str = f"http://{host}:{port}"
         self.user: str = user
         self.password: str = password
 
@@ -51,13 +51,39 @@ class WattBox(object):
         self.battery_test: bool = False
         self.est_run_time: int = 0  # In minutes
 
+        # Outlets list
         self.outlets: List[Outlet] = []
 
-        result = requests.get(
+    # Get Initial Data
+    def get_initial(self) -> None:
+        logger.debug("Get Initial")
+        response = httpx.get(
             f"{self.base_host}/wattbox_info.xml",
-            auth=HTTPBasicAuth(self.user, self.password),
+            auth=(self.user, self.password),
         )
-        soup = BeautifulSoup(result.content, "xml")
+        logger.debug(f"    Status: {response.status_code}")
+        response.raise_for_status()
+        self.parse_initial(response)
+        self.parse_update(response)
+
+    async def async_get_initial(self) -> None:
+        logger.debug("Async Get Initial")
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{self.base_host}/wattbox_info.xml",
+                auth=(self.user, self.password),
+            )
+            logger.debug(f"    Status: {response.status_code}")
+            response.raise_for_status()
+        self.parse_initial(response)
+        self.parse_update(response)
+
+    # Parse Initial Data
+    def parse_initial(self, response: httpx.Response) -> None:
+        logger.debug("Parse Initial")
+        # Parse with BeautifulSoup
+        soup = BeautifulSoup(response.content, "xml")
+        logger.debug(soup)
 
         # Set these values once, should never change
         if soup.hardware_version is not None:
@@ -84,15 +110,34 @@ class WattBox(object):
         for i in range(1, self.number_outlets + 1):
             self.outlets.append(Outlet(i, self))
 
-        # Update all the other values
-        self.update()
-
+    # Get Update Data
     def update(self) -> None:
-        result = requests.get(
+        logger.debug("Update")
+        response = httpx.get(
             f"{self.base_host}/wattbox_info.xml",
-            auth=HTTPBasicAuth(self.user, self.password),
+            auth=(self.user, self.password),
         )
-        soup = BeautifulSoup(result.content, "xml")
+        logger.debug(f"    Status: {response.status_code}")
+        response.raise_for_status()
+        self.parse_update(response)
+
+    async def async_update(self) -> None:
+        logger.debug("Async Update")
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{self.base_host}/wattbox_info.xml",
+                auth=(self.user, self.password),
+            )
+            logger.debug(f"    Status: {response.status_code}")
+            response.raise_for_status()
+        self.parse_update(response)
+
+    # Parse Update Data
+    def parse_update(self, response: httpx.Response) -> None:
+        logger.debug("Parse Update")
+        # Parse with BeautifulSoup
+        soup = BeautifulSoup(response.content, "xml")
+        logger.debug(soup)
 
         # Status values
         if soup.audible_alarm is not None:
@@ -130,6 +175,7 @@ class WattBox(object):
             if soup.est_run_time is not None:
                 self.est_run_time = int(soup.est_run_time.text)
 
+        # Outlets
         outlet_methods: Union[List[bool], List[None]]
         if soup.outlet_method is not None:
             outlet_methods = [_ == "1" for _ in soup.outlet_method.text.split(",")]
@@ -161,58 +207,115 @@ class WattBox(object):
         # Master switch is on if all those outlets are on
         self.outlets[0].status = all(statuses)
 
-    # Will send the command to the specific outlet.
-    def send_command(self, outlet, command) -> None:
-        _ = requests.get(
-            f"{self.base_host}/control.cgi?outlet={outlet}&command={command}",
-            auth=HTTPBasicAuth(self.user, self.password),
+    # Send command
+    def send_command(self, outlet: int, command: Commands) -> None:
+        logger.debug("Send Command")
+        response = httpx.get(
+            f"{self.base_host}/control.cgi",
+            params={"outlet": outlet, "command": command.value},
+            auth=(self.user, self.password),
         )
+        logger.debug(f"    Status: {response.status_code}")
+        response.raise_for_status()
+
+    async def async_send_command(self, outlet: int, command: Commands) -> None:
+        logger.debug("Async Send Command")
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{self.base_host}/control.cgi",
+                params={"outlet": outlet, "command": command.value},
+                auth=(self.user, self.password),
+            )
+            logger.debug(f"    Status: {response.status_code}")
+            response.raise_for_status()
+
+    # Verify command is master eligible
+    def check_master_command(self, command: Commands) -> None:
+        if command not in (Commands.ON, Commands.OFF):
+            raise ValueError(
+                f"Command ({command}) can only be `Commands.ON` or `Commands.OFF`."
+            )
 
     # Simulates pressing the master switch.
     # Will send the command to all outlets with master switch enabled.
-    def send_master_command(self, command) -> None:
-        if command not in (Commands.ON, Commands.OFF):
-            raise ValueError(
-                "Command ({}) can only be `Commands.ON` or `Commands.OFF`.".format(
-                    command
-                )
-            )
+    def send_master_command(self, command: Commands) -> None:
+        logger.debug("Send Master Command(s)")
+        self.check_master_command(command)
         for outlet in self.outlets:
             if outlet.method and outlet.status != command:
                 self.send_command(outlet.index, command)
+        logger.debug("Send Master Command(s)")
 
-    def __str__(self):
+    async def async_send_master_command(self, command: Commands) -> None:
+        logger.debug("Send Master Command(s)")
+        self.check_master_command(command)
+        for outlet in self.outlets:
+            if outlet.method and outlet.status != command:
+                await self.async_send_command(outlet.index, command)
+        logger.debug("Send Master Command(s)")
+
+    # String Representation
+    def __str__(self) -> str:
         return f"{self.hostname} ({self.base_host}): {self.hardware_version}"
 
 
+def create_wattbox(host: str, user: str, password: str, port: int = 80) -> WattBox:
+    wattbox = WattBox(host=host, user=user, password=password, port=port)
+    wattbox.get_initial()
+    return wattbox
+
+
+async def async_create_wattbox(
+    host: str, user: str, password: str, port: int = 80
+) -> WattBox:
+    wattbox = WattBox(host=host, user=user, password=password, port=port)
+    await wattbox.async_get_initial()
+    return wattbox
+
+
 class Outlet(object):
-    def __init__(self, index, wattbox) -> None:
-        self.index = index
+    def __init__(self, index: int, wattbox: WattBox) -> None:
+        self.index: int = index
         self.method: Optional[bool] = None
         self.name: Optional[str] = ""
         self.status: Optional[bool] = None
-        self.wattbox = wattbox
+        self.wattbox: WattBox = wattbox
 
     def turn_on(self) -> None:
         self.wattbox.send_command(self.index, Commands.ON)
 
+    async def async_turn_on(self) -> None:
+        await self.wattbox.async_send_command(self.index, Commands.ON)
+
     def turn_off(self) -> None:
         self.wattbox.send_command(self.index, Commands.OFF)
 
+    async def async_turn_off(self) -> None:
+        await self.wattbox.async_send_command(self.index, Commands.OFF)
+
     def reset(self) -> None:
         self.wattbox.send_command(self.index, Commands.RESET)
+
+    async def async_reset(self) -> None:
+        await self.wattbox.async_send_command(self.index, Commands.RESET)
 
     def __str__(self) -> str:
         return f"{self.name} ({self.index}): {self.status}"
 
 
 class MasterSwitch(Outlet):
-    def __init__(self, wattbox) -> None:
+    def __init__(self, wattbox: WattBox) -> None:
         super().__init__(0, wattbox)
         self.name = "Master Switch"
 
     def turn_on(self) -> None:
         self.wattbox.send_master_command(Commands.ON)
 
+    async def async_turn_on(self) -> None:
+        await self.wattbox.async_send_master_command(Commands.ON)
+
     def turn_off(self) -> None:
         self.wattbox.send_master_command(Commands.OFF)
+
+    async def async_turn_of(self) -> None:
+        await self.wattbox.async_send_master_command(Commands.OFF)
