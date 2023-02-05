@@ -129,7 +129,7 @@ class IpWattBox(BaseWattBox):
         if transport is None:
             if port == 22:
                 transport = "ssh"
-            elif port == 21:
+            elif port == 23:
                 transport = "telnet"
             else:
                 raise ValueError("Non Standard Port, Transport must be set.")
