@@ -10,7 +10,7 @@ setuptools.setup(
     license="MIT",
     packages=setuptools.find_packages(),
     python_requires=">=3.7",
-    install_requires=["httpx", "beautifulsoup4", "lxml", "h11>=0.14.0"],
+    install_requires=["httpx", "beautifulsoup4", "lxml", "h11>=0.14.0", "scrapli"],
     classifiers=[
         "Development Status :: 4 - Beta",
         "Programming Language :: Python",
