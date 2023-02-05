@@ -113,7 +113,7 @@ class IpWattBox(BaseWattBox):
         user: str,
         password: str,
         port: int = 22,
-        transport: str = "ssh",
+        transport: Optional[str] = None,
     ) -> None:
         super().__init__(host, user, password, port)
 
@@ -126,6 +126,13 @@ class IpWattBox(BaseWattBox):
             "auth_password": password,
             "port": port,
         }
+        if transport is None:
+            if port == 22:
+                transport = "ssh"
+            elif port == 21:
+                transport = "telnet"
+            else:
+                raise ValueError("Non Standard Port, Transport must be set.")
 
         self.driver = WattBoxDriver(
             **conninfo,
