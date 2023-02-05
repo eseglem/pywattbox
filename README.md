@@ -2,8 +2,6 @@
 
 For usage see: [eseglem/hass-wattbox][hass_wattbox]
 
-Note: Temporarily includes a monkeypatch for `h11` because WattBox includes an extra space in a header. This needs the be applied before use.
-
 Python wrapper for [WattBox][wattbox]
 
 The documentation for the HTTP API was found [Here][http_api]
