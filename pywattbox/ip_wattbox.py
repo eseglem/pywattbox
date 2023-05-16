@@ -9,13 +9,11 @@ from typing import (
     NamedTuple,
     Optional,
     Tuple,
-    Type,
     TypeVar,
     Union,
 )
 from enum import Enum
 from scrapli.response import Response
-
 
 from .driver.async_driver import WattBoxAsyncDriver
 from .driver.sync_driver import WattBoxDriver
