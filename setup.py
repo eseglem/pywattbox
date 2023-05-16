@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name="pywattbox",
-    version="0.5.0a",
+    version="0.5.0a3",
     author="Erik Seglem",
     author_email="erik.seglem@gmail.com",
     description="A python wrapper for the WattBox API.",
@@ -10,7 +10,14 @@ setuptools.setup(
     license="MIT",
     packages=setuptools.find_packages(),
     python_requires=">=3.7",
-    install_requires=["httpx", "beautifulsoup4", "lxml", "h11>=0.14.0", "scrapli"],
+    install_requires=[
+        "httpx",
+        "beautifulsoup4",
+        "lxml",
+        "h11>=0.14.0",
+        "scrapli",
+        "ssh2",
+    ],
     classifiers=[
         "Development Status :: 4 - Beta",
         "Programming Language :: Python",
