@@ -201,7 +201,9 @@ class IpWattBox(BaseWattBox):
         self.current_value = float(power_status[0])
         self.power_value = float(power_status[1])
         self.voltage_value = float(power_status[2])
-        self.safe_voltage_status = power_status[3] == "1"
+        # The light is green and shows as green in the web UI, but strangely
+        # the value is "0" in this API call.
+        self.safe_voltage_status = power_status[3] == "0"
         # outlet_name
         for i, s in enumerate(responses.outlet_name.result.split(",")):
             self.outlets[i].name = s.lstrip("{").rstrip("}")
@@ -283,6 +285,10 @@ class IpWattBox(BaseWattBox):
             )
         )
         await self.async_update()
+
+    # String Representation
+    def __str__(self) -> str:
+        return f"{self.hostname} ({self.host}): {self.hardware_version}"
 
 
 def create_ip_wattbox(host: str, user: str, password: str, port: int = 22) -> IpWattBox:

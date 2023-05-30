@@ -98,6 +98,7 @@ def _create_wattbox(
 ) -> _T_WattBox:
     wattbox = type_(host=host, user=user, password=password, port=port)
     wattbox.get_initial()
+    wattbox.update()
     return wattbox
 
 
@@ -106,6 +107,7 @@ async def _async_create_wattbox(
 ) -> _T_WattBox:
     wattbox = type_(host=host, user=user, password=password, port=port)
     await wattbox.async_get_initial()
+    await wattbox.async_update()
     return wattbox
 
 
