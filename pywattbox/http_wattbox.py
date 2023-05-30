@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Optional, Union
+from typing import List, Optional
 
 import httpx
 from bs4 import BeautifulSoup
@@ -72,9 +72,8 @@ class HttpWattBox(BaseWattBox):
             self.number_outlets = 0
 
         # Initialize outlets
-        self.outlets.append(MasterSwitch(self))
-        for i in range(1, self.number_outlets + 1):
-            self.outlets.append(Outlet(i, self))
+        self.outlets = {i: Outlet(i, self) for i in range(1, self.number_outlets + 1)}
+        self.master_outlet = MasterSwitch(self)
 
     # Get Update Data
     def update(self) -> None:
@@ -142,36 +141,25 @@ class HttpWattBox(BaseWattBox):
                 self.est_run_time = int(soup.est_run_time.text)
 
         # Outlets
-        outlet_methods: Union[List[bool], List[None]]
         if soup.outlet_method is not None:
-            outlet_methods = [_ == "1" for _ in soup.outlet_method.text.split(",")]
-        else:
-            outlet_methods = [None] * self.number_outlets
+            for i, s in enumerate(soup.outlet_method.text.split(","), start=1):
+                self.outlets[i].method = s == "1"
 
-        outlet_names: Union[List[str], List[None]]
         if soup.outlet_name is not None:
-            outlet_names = soup.outlet_name.text.split(",")
-        else:
-            outlet_names = [None] * self.number_outlets
+            for i, s in enumerate(soup.outlet_name.text.split(","), start=1):
+                self.outlets[i].name = s
 
-        outlet_statuses: Union[List[bool], List[None]]
-        if soup.outlet_status:
-            outlet_statuses = [_ == "1" for _ in soup.outlet_status.text.split(",")]
-        else:
-            outlet_statuses = [None] * self.number_outlets
+        if soup.outlet_status is not None:
+            for i, s in enumerate(soup.outlet_status.text.split(","), start=1):
+                self.outlets[i].status = s == "1"
 
-        # self.outlets[0] is master so start at 1
-        for i in range(1, self.number_outlets + 1):
-            self.outlets[i].method = outlet_methods[i - 1]
-            self.outlets[i].name = outlet_names[i - 1]
-            self.outlets[i].status = outlet_statuses[i - 1]
-
-        # Gather statuses for outlets that have method on
-        statuses: List[Optional[bool]] = [
-            outlet.status for outlet in self.outlets[1:] if outlet.method
-        ]
         # Master switch is on if all those outlets are on
-        self.outlets[0].status = all(statuses)
+        if self.master_outlet is not None:
+            # Gather statuses for outlets that have method on
+            statuses: List[Optional[bool]] = [
+                outlet.status for outlet in self.outlets.values() if outlet.method
+            ]
+            self.master_outlet.status = all(statuses)
 
     # Send command
     def send_command(self, outlet: int, command: Commands) -> None:
@@ -207,7 +195,7 @@ class HttpWattBox(BaseWattBox):
     def send_master_command(self, command: Commands) -> None:
         logger.debug("Send Master Command(s)")
         self.check_master_command(command)
-        for outlet in self.outlets:
+        for outlet in self.outlets.values():
             if outlet.method and outlet.status != command:
                 self.send_command(outlet.index, command)
         logger.debug("Send Master Command(s)")
@@ -215,7 +203,7 @@ class HttpWattBox(BaseWattBox):
     async def async_send_master_command(self, command: Commands) -> None:
         logger.debug("Send Master Command(s)")
         self.check_master_command(command)
-        for outlet in self.outlets:
+        for outlet in self.outlets.values():
             if outlet.method and outlet.status != command:
                 await self.async_send_command(outlet.index, command)
         logger.debug("Send Master Command(s)")

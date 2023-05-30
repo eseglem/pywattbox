@@ -176,9 +176,8 @@ class IpWattBox(BaseWattBox):
         self.number_outlets = (
             int(count) if (count := responses.number_outlets.result) else 0
         )
-        # TODO: Master?
         # The index for outlet within WattBox starts at 1.
-        self.outlets = [Outlet(i + 1, self) for i in range(self.number_outlets)]
+        self.outlets = {i: Outlet(i, self) for i in range(1, self.number_outlets + 1)}
 
     def get_initial(self) -> None:
         logger.debug("Get Initial")
@@ -205,10 +204,10 @@ class IpWattBox(BaseWattBox):
         # the value is "0" in this API call.
         self.safe_voltage_status = power_status[3] == "0"
         # outlet_name
-        for i, s in enumerate(responses.outlet_name.result.split(",")):
+        for i, s in enumerate(responses.outlet_name.result.split(","), start=1):
             self.outlets[i].name = s.lstrip("{").rstrip("}")
         # outlet_status
-        for i, s in enumerate(responses.outlet_status.result.split(",")):
+        for i, s in enumerate(responses.outlet_status.result.split(","), start=1):
             self.outlets[i].status = s == "1"
 
     def parse_ups_status(self, response: Response) -> None:
@@ -242,7 +241,7 @@ class IpWattBox(BaseWattBox):
                     REQUEST_MESSAGES.OUTLET_POWER_STATUS.value.format(
                         outlet=(outlet.index)
                     )
-                    for outlet in self.outlets
+                    for outlet in self.outlets.values()
                 ),
             )
         )
@@ -260,7 +259,7 @@ class IpWattBox(BaseWattBox):
                     REQUEST_MESSAGES.OUTLET_POWER_STATUS.value.format(
                         outlet=(outlet.index)
                     )
-                    for outlet in self.outlets
+                    for outlet in self.outlets.values()
                 ),
             )
         )

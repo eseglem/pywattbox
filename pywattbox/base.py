@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from enum import IntEnum
-from typing import List, Optional, Type, TypeVar
+from typing import Dict, Optional, Type, TypeVar
 
 logger = logging.getLogger("pywattbox")
 
@@ -63,7 +63,8 @@ class BaseWattBox(ABC):
         self.est_run_time: int = 0  # In minutes
 
         # Outlets list
-        self.outlets: List[Outlet] = []
+        self.outlets: Dict[int, Outlet] = {}
+        self.master_outlet: Optional[Outlet] = None
 
     @abstractmethod
     def get_initial(self) -> None:
