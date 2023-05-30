@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from io import BytesIO
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union
 
 from scrapli.decorators import timeout_modifier
 from scrapli.driver import AsyncDriver
-from scrapli.driver.generic.base_driver import BaseGenericDriver
+from scrapli.exceptions import ScrapliConnectionNotOpened
 from scrapli.response import Response
 
 from . import PROMPTS
@@ -17,8 +17,11 @@ async def on_open(driver: WattBoxAsyncDriver) -> None:
 
 
 async def on_close(driver: WattBoxAsyncDriver) -> None:
-    driver.channel.write("!Exit")
-    driver.channel.send_return()
+    try:
+        driver.channel.write("!Exit")
+        driver.channel.send_return()
+    except ScrapliConnectionNotOpened:
+        pass
 
 
 class WattBoxAsyncDriver(AsyncDriver):
@@ -46,7 +49,7 @@ class WattBoxAsyncDriver(AsyncDriver):
         transport_options: Optional[Dict[str, Any]] = None,
         channel_log: Union[str, bool, BytesIO] = False,
         channel_log_mode: str = "write",
-        channel_lock: bool = False,
+        channel_lock: bool = True,
         logging_uid: str = "",
     ) -> None:
         super().__init__(
@@ -76,14 +79,14 @@ class WattBoxAsyncDriver(AsyncDriver):
             logging_uid=logging_uid,
         )
 
+    async def _open(self, force: bool = False) -> None:
+        if force or not self.transport.isalive():
+            await self.open()
+
     @timeout_modifier
     async def _send_command(
         self,
         command: str,
-        *,
-        strip_prompt: bool = False,
-        failed_when_contains: Optional[Union[str, List[str]]] = "#Error",
-        timeout_ops: Optional[float] = None,
     ) -> Response:
         """Send a command.
 
@@ -93,39 +96,28 @@ class WattBoxAsyncDriver(AsyncDriver):
 
         Args:
             command: string to send to device in privilege exec mode
-            strip_prompt: strip prompt or not, defaults to True (yes, strip the prompt)
             failed_when_contains: string or list of strings indicating failure if found in response
-            timeout_ops: timeout ops value for this operation; only sets the timeout_ops value for
-                the duration of the operation, value is reset to initial value after operation is
-                completed
 
         Returns:
             Response: Scrapli Response object
         """
+        await self._open()
 
-        response = BaseGenericDriver._pre_send_command(
+        response = Response(
             host=self._base_transport_args.host,
-            command=command,
-            failed_when_contains=failed_when_contains,
+            channel_input=command,
+            failed_when_contains="#Error",
         )
-
-        channel_input = command.encode()
 
         # Normally handled in the channel `send_input`, but WattBox is special and doesn't work
         # with that function. Pulled it all into the Driver for simplicity.
         async with self.channel._channel_lock():
             self.channel.write(command)
             self.channel.send_return()
-            if self.transport_name not in ("telnet", "asynctelnet"):
-                await self.channel._read_until_input(channel_input=channel_input)
             raw_response = await self.channel._read_until_prompt()
 
-        processed_response = self.channel._process_output(
-            raw_response, strip_prompt
-        ).lstrip(channel_input + b"=")
+        processed_response = raw_response.splitlines()[-1].split(b"=")[-1]
 
-        return BaseGenericDriver._post_send_command(
-            raw_response=raw_response,
-            processed_response=processed_response,
-            response=response,
-        )
+        response.record_response(processed_response)
+        response.raw_result = raw_response
+        return response

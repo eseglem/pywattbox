@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from enum import IntEnum
-from typing import TYPE_CHECKING, List, Optional, Type, TypeVar
+from typing import List, Optional, Type, TypeVar
 
 logger = logging.getLogger("pywattbox")
 
@@ -25,14 +25,7 @@ class Commands(IntEnum):
     TOGGLE = 6
 
 
-# Type Checking doesn't like ABC for TypeVar
-if TYPE_CHECKING:
-    Base = object
-else:
-    Base = ABC
-
-
-class BaseWattBox(Base):
+class BaseWattBox(ABC):
     """Base WattBox that defines the"""
 
     def __init__(self, host: str, user: str, password: str, port: int) -> None:
@@ -116,12 +109,17 @@ async def _async_create_wattbox(
     return wattbox
 
 
-class Outlet(object):
+class Outlet:
     def __init__(self, index: int, wattbox: BaseWattBox) -> None:
         self.index: int = index
         self.method: Optional[bool] = None
         self.name: Optional[str] = ""
         self.status: Optional[bool] = None
+        # Power values
+        self.current_value: Optional[float] = None  # In Amps
+        self.power_value: Optional[float] = None  # In watts
+        self.voltage_value: Optional[float] = None  # In volts
+        # The WattBox
         self.wattbox: BaseWattBox = wattbox
 
     def turn_on(self) -> None:

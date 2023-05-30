@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import Enum
 from typing import (
     Any,
     Dict,
@@ -12,11 +13,8 @@ from typing import (
     TypeVar,
     Union,
 )
-from enum import Enum
-from scrapli.response import Response
 
-from .driver.async_driver import WattBoxAsyncDriver
-from .driver.sync_driver import WattBoxDriver
+from scrapli.response import Response
 
 from .base import (
     BaseWattBox,
@@ -26,6 +24,8 @@ from .base import (
     _create_wattbox,
     logger,
 )
+from .driver.async_driver import WattBoxAsyncDriver
+from .driver.sync_driver import WattBoxDriver
 
 
 class REQUEST_MESSAGES(Enum):
@@ -44,7 +44,7 @@ class REQUEST_MESSAGES(Enum):
 
 
 class CONTROL_MESSAGES(Enum):
-    OUTLET_NAME_SET = "!OutletNameSet={outlet}{name}"
+    OUTLET_NAME_SET = "!OutletNameSet={outlet},{name}"
     OUTLET_NAME_SET_ALL = "!OutletNameSetAll={names}"  # Comma separated list of names
     OUTLET_SET = "!OutletSet={outlet},{action},{delay}"  # Optional delay
     OUTLET_POWER_ON_DELAY_SET = "!OutletPowerOnDelaySet={outlet},{delay}"
@@ -141,20 +141,28 @@ class IpWattBox(BaseWattBox):
             transport="asyncssh" if transport == "ssh" else "asynctelnet",
         )
 
-    def send_requests(self, requests: Iterable[REQUEST_MESSAGES]) -> List[Response]:
+    def send_requests(
+        self, requests: Iterable[Union[REQUEST_MESSAGES, str]]
+    ) -> List[Response]:
         responses: List[Response] = []
-        with self.driver as conn:
-            for request in requests:
-                responses.append(conn._send_command(request.value))
+        for request in requests:
+            responses.append(
+                self.driver._send_command(
+                    request.value if isinstance(request, REQUEST_MESSAGES) else request
+                )
+            )
         return responses
 
     async def async_send_requests(
-        self, requests: Iterable[REQUEST_MESSAGES]
+        self, requests: Iterable[Union[REQUEST_MESSAGES, str]]
     ) -> List[Response]:
         responses: List[Response] = []
-        async with self.async_driver as conn:
-            for request in requests:
-                responses.append(await conn._send_command(request.value))
+        for request in requests:
+            responses.append(
+                await self.async_driver._send_command(
+                    request.value if isinstance(request, REQUEST_MESSAGES) else request
+                )
+            )
         return responses
 
     def parse_initial(self, responses: InitialResponses) -> None:
@@ -169,8 +177,8 @@ class IpWattBox(BaseWattBox):
             int(count) if (count := responses.number_outlets.result) else 0
         )
         # TODO: Master?
-        for i in range(self.number_outlets):
-            self.outlets.append(Outlet(i, self))
+        # The index for outlet within WattBox starts at 1.
+        self.outlets = [Outlet(i + 1, self) for i in range(self.number_outlets)]
 
     def get_initial(self) -> None:
         logger.debug("Get Initial")
@@ -212,41 +220,68 @@ class IpWattBox(BaseWattBox):
         self.audible_alarm = ups_status[5] == "True"
         self.mute = ups_status[6] == "True"
 
+    def parse_outlet_power_statuses(self, responses: Iterable[Response]) -> None:
+        logger.debug("Parse Outlet Statuses")
+        for response in responses:
+            index, power, current, voltage = response.result.split(",")
+            # The index in the python list is off by 1 from the WattBox index.
+            outlet = self.outlets[int(index) - 1]
+            outlet.power_value = float(power)
+            outlet.current_value = float(current)
+            outlet.voltage_value = float(voltage)
+
     def update(self) -> None:
         logger.debug("Update")
-        base_responses = UpdateBaseResponses(*self.send_requests(UPDATE_BASE_REQUESTS))
-        self.parse_update_base(base_responses)
-        ups_status = self.send_requests((REQUEST_MESSAGES.UPS_STATUS,))
-        self.parse_ups_status(ups_status[0])
+        responses = self.send_requests(
+            (
+                *UPDATE_BASE_REQUESTS,
+                REQUEST_MESSAGES.UPS_STATUS,
+                *(
+                    REQUEST_MESSAGES.OUTLET_POWER_STATUS.value.format(
+                        outlet=(outlet.index)
+                    )
+                    for outlet in self.outlets
+                ),
+            )
+        )
+        self.parse_update_base(UpdateBaseResponses(*responses[0:4]))
+        self.parse_ups_status(responses[4])
+        self.parse_outlet_power_statuses(responses[5:])
 
     async def async_update(self) -> None:
         logger.debug("Async Update")
-        base_responses = UpdateBaseResponses(
-            *(await self.async_send_requests(UPDATE_BASE_REQUESTS))
+        responses = await self.async_send_requests(
+            (
+                *UPDATE_BASE_REQUESTS,
+                REQUEST_MESSAGES.UPS_STATUS,
+                *(
+                    REQUEST_MESSAGES.OUTLET_POWER_STATUS.value.format(
+                        outlet=(outlet.index)
+                    )
+                    for outlet in self.outlets
+                ),
+            )
         )
-        self.parse_update_base(base_responses)
-        ups_status = await self.async_send_requests((REQUEST_MESSAGES.UPS_STATUS,))
-        self.parse_ups_status(ups_status[0])
-        # TODO: Outlets have individual power status?
+        self.parse_update_base(UpdateBaseResponses(*responses[0:4]))
+        self.parse_ups_status(responses[4])
+        self.parse_outlet_power_statuses(responses[5:])
 
     def send_command(self, outlet: int, command: Commands) -> None:
         logger.debug("Send Command")
-        with self.driver as conn:
-            conn._send_command(
-                CONTROL_MESSAGES.OUTLET_SET.value.format(
-                    outlet=outlet, action=command.name, delay=0
-                )
+        self.driver._send_command(
+            CONTROL_MESSAGES.OUTLET_SET.value.format(
+                outlet=outlet, action=command.name, delay=0
             )
+        )
         self.update()
 
     async def async_send_command(self, outlet: int, command: Commands) -> None:
         logger.debug("Async Send Command")
-        async with self.async_driver as conn:
-            await conn._send_command(
-                CONTROL_MESSAGES.OUTLET_SET.value.format(
-                    outlet=outlet, action=command.name, delay=0
-                )
+        await self.async_driver._send_command(
+            CONTROL_MESSAGES.OUTLET_SET.value.format(
+                outlet=outlet, action=command.name, delay=0
             )
+        )
         await self.async_update()
 
 
