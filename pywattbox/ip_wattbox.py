@@ -226,7 +226,7 @@ class IpWattBox(BaseWattBox):
         for response in responses:
             index, power, current, voltage = response.result.split(",")
             # The index in the python list is off by 1 from the WattBox index.
-            outlet = self.outlets[int(index) - 1]
+            outlet = self.outlets[int(index)]
             outlet.power_value = float(power)
             outlet.current_value = float(current)
             outlet.voltage_value = float(voltage)
