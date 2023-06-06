@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from io import BytesIO
 from typing import Any, Callable, Dict, Optional, Union
 
@@ -9,6 +10,8 @@ from scrapli.exceptions import ScrapliConnectionNotOpened
 from scrapli.response import Response
 
 from . import PROMPTS
+
+logger = logging.getLogger("pywattbox.sync_driver")
 
 
 def on_open(driver: WattBoxDriver) -> None:
@@ -116,8 +119,37 @@ class WattBoxDriver(Driver):
             self.channel.send_return()
             raw_response = self.channel._read_until_prompt()
 
-        processed_response = raw_response.splitlines()[-1].split(b"=")[-1]
+            logger.debug("raw_response: %s", raw_response)
+            split_response = raw_response.strip().splitlines()
+            logger.debug("split_response: %s", split_response)
+            if (
+                self.transport not in ("telnet", "asynctelnet")
+                and len(split_response) < 2
+            ):
+                logger.error("Not enough lines: %s. Getting more", len(split_response))
+                raw_response += self.channel._read_until_prompt()
+                logger.debug("raw_response: %s", raw_response)
+                split_response = raw_response.strip().splitlines()
+                logger.debug("split_response: %s", split_response)
 
+        if (
+            self.transport not in ("telnet", "asynctelnet")
+            and split_response[0] != command.encode()
+        ):
+            logger.error("Doesn't match command: %s - %s", command, split_response[0])
+
+        if command.startswith("?"):
+            if not split_response[-1].startswith(command.encode()):
+                logger.error(
+                    "Expected response to start with: %s, Got %s",
+                    command,
+                    split_response[-1],
+                )
+            processed_response = split_response[1].split(b"=")[-1]
+        else:
+            processed_response = split_response[-1]
+
+        logger.debug("processed_response: %s", processed_response)
         response.record_response(processed_response)
         response.raw_result = raw_response
         return response

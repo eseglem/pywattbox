@@ -189,6 +189,7 @@ class IpWattBox(BaseWattBox):
         responses = InitialResponses(
             *(await self.async_send_requests(INITIAL_REQUESTS))
         )
+        logger.debug("Responses: %s", responses)
         self.parse_initial(responses)
 
     def parse_update_base(self, responses: UpdateBaseResponses) -> None:
