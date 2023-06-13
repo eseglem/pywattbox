@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from enum import Enum
 from typing import (
     Any,
@@ -16,16 +17,11 @@ from typing import (
 
 from scrapli.response import Response
 
-from .base import (
-    BaseWattBox,
-    Commands,
-    Outlet,
-    _async_create_wattbox,
-    _create_wattbox,
-    logger,
-)
+from .base import BaseWattBox, Commands, Outlet, _async_create_wattbox, _create_wattbox
 from .driver.async_driver import WattBoxAsyncDriver
 from .driver.sync_driver import WattBoxDriver
+
+logger = logging.getLogger("pywattbox.ip")
 
 
 class REQUEST_MESSAGES(Enum):
@@ -117,6 +113,7 @@ class IpWattBox(BaseWattBox):
 
         self.battery_test = None
         self.cloud_status = None
+        self.outlet_power_status: bool = False
 
         conninfo: Dict[str, Any] = {
             "host": host,
@@ -169,6 +166,8 @@ class IpWattBox(BaseWattBox):
         logger.debug("Parse Initial")
         # TODO: Add if failed logic?
         self.hardware_version = responses.hardware_version.result
+        if "150" not in self.hardware_version and "250" not in self.hardware_version:
+            self.outlet_power_status = True
         self.firmware_version = responses.firmware_version.result
         self.has_ups = responses.has_ups.result == "1"
         self.hostname = responses.hostname.result
@@ -232,41 +231,38 @@ class IpWattBox(BaseWattBox):
             outlet.current_value = float(current)
             outlet.voltage_value = float(voltage)
 
-    def update(self) -> None:
-        logger.debug("Update")
-        responses = self.send_requests(
-            (
-                *UPDATE_BASE_REQUESTS,
-                REQUEST_MESSAGES.UPS_STATUS,
-                *(
+    @property
+    def update_requests(self) -> Tuple[Union[REQUEST_MESSAGES, str], ...]:
+        return (
+            *UPDATE_BASE_REQUESTS,
+            REQUEST_MESSAGES.UPS_STATUS,
+            *(
+                (
                     REQUEST_MESSAGES.OUTLET_POWER_STATUS.value.format(
                         outlet=(outlet.index)
                     )
                     for outlet in self.outlets.values()
-                ),
-            )
+                )
+                if self.outlet_power_status
+                else ()
+            ),
         )
+
+    def update(self) -> None:
+        logger.debug("Update")
+        responses = self.send_requests(self.update_requests)
         self.parse_update_base(UpdateBaseResponses(*responses[0:4]))
         self.parse_ups_status(responses[4])
-        self.parse_outlet_power_statuses(responses[5:])
+        if self.outlet_power_status:
+            self.parse_outlet_power_statuses(responses[5:])
 
     async def async_update(self) -> None:
         logger.debug("Async Update")
-        responses = await self.async_send_requests(
-            (
-                *UPDATE_BASE_REQUESTS,
-                REQUEST_MESSAGES.UPS_STATUS,
-                *(
-                    REQUEST_MESSAGES.OUTLET_POWER_STATUS.value.format(
-                        outlet=(outlet.index)
-                    )
-                    for outlet in self.outlets.values()
-                ),
-            )
-        )
+        responses = await self.async_send_requests(self.update_requests)
         self.parse_update_base(UpdateBaseResponses(*responses[0:4]))
         self.parse_ups_status(responses[4])
-        self.parse_outlet_power_statuses(responses[5:])
+        if self.outlet_power_status:
+            self.parse_outlet_power_statuses(responses[5:])
 
     def send_command(self, outlet: int, command: Commands) -> None:
         logger.debug("Send Command")

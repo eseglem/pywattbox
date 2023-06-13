@@ -1,18 +1,14 @@
 from __future__ import annotations
 
+import logging
 from typing import List, Optional
 
 import httpx
 from bs4 import BeautifulSoup
 
-from .base import (
-    BaseWattBox,
-    Commands,
-    Outlet,
-    _async_create_wattbox,
-    _create_wattbox,
-    logger,
-)
+from .base import BaseWattBox, Commands, Outlet, _async_create_wattbox, _create_wattbox
+
+logger = logging.getLogger("pywattbox.http")
 
 
 class HttpWattBox(BaseWattBox):
