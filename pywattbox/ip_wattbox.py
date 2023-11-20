@@ -15,6 +15,7 @@ from typing import (
     Union,
 )
 
+from scrapli.exceptions import ScrapliTransportPluginError
 from scrapli.response import Response
 
 from .base import BaseWattBox, Commands, Outlet, _async_create_wattbox, _create_wattbox
@@ -100,6 +101,10 @@ class UpdateBaseResponses(NamedTuple):
 _Responses = TypeVar("_Responses", bound=Union[InitialResponses, UpdateBaseResponses])
 
 
+class DriverUnavailableError(Exception):
+    pass
+
+
 class IpWattBox(BaseWattBox):
     def __init__(
         self,
@@ -129,18 +134,26 @@ class IpWattBox(BaseWattBox):
             else:
                 raise ValueError("Non Standard Port, Transport must be set.")
 
-        self.driver = WattBoxDriver(
-            **conninfo,
-            transport="ssh2" if transport == "ssh" else "telnet",
-        )
-        self.async_driver = WattBoxAsyncDriver(
-            **conninfo,
-            transport="asyncssh" if transport == "ssh" else "asynctelnet",
-        )
+        try:
+            self.driver: Optional[WattBoxDriver] = WattBoxDriver(
+                **conninfo,
+                transport="ssh2" if transport == "ssh" else "telnet",
+            )
+        except ScrapliTransportPluginError:
+            self.driver = None
+        try:
+            self.async_driver: Optional[WattBoxAsyncDriver] = WattBoxAsyncDriver(
+                **conninfo,
+                transport="asyncssh" if transport == "ssh" else "asynctelnet",
+            )
+        except ScrapliTransportPluginError:
+            self.async_driver = None
 
     def send_requests(
         self, requests: Iterable[Union[REQUEST_MESSAGES, str]]
     ) -> List[Response]:
+        if not self.driver:
+            raise DriverUnavailableError
         responses: List[Response] = []
         for request in requests:
             responses.append(
@@ -153,6 +166,8 @@ class IpWattBox(BaseWattBox):
     async def async_send_requests(
         self, requests: Iterable[Union[REQUEST_MESSAGES, str]]
     ) -> List[Response]:
+        if not self.async_driver:
+            raise DriverUnavailableError
         responses: List[Response] = []
         for request in requests:
             responses.append(
@@ -266,6 +281,8 @@ class IpWattBox(BaseWattBox):
 
     def send_command(self, outlet: int, command: Commands) -> None:
         logger.debug("Send Command")
+        if not self.driver:
+            raise DriverUnavailableError
         self.driver._send_command(
             CONTROL_MESSAGES.OUTLET_SET.value.format(
                 outlet=outlet, action=command.name, delay=0
@@ -275,6 +292,8 @@ class IpWattBox(BaseWattBox):
 
     async def async_send_command(self, outlet: int, command: Commands) -> None:
         logger.debug("Async Send Command")
+        if not self.async_driver:
+            raise DriverUnavailableError
         await self.async_driver._send_command(
             CONTROL_MESSAGES.OUTLET_SET.value.format(
                 outlet=outlet, action=command.name, delay=0
