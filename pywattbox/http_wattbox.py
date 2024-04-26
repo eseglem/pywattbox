@@ -121,7 +121,6 @@ class HttpWattBox(BaseWattBox):
         logger.debug("Parse Update")
         # Parse with BeautifulSoup
         soup = BeautifulSoup(response.content, "xml")
-        print(response.content)
         logger.debug(soup)
 
         # Status values
