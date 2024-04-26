@@ -15,13 +15,36 @@ class HttpWattBox(BaseWattBox):
     def __init__(self, host: str, user: str, password: str, port: int = 80) -> None:
         super().__init__(host, user, password, port)
         self.base_host: str = f"http://{host}:{port}"
+        self.login(user, password)
+
+    def login(self, user: str, password: str) -> None:
+        # It seems that non-admin users cannot use Basic authentication, they must
+        # use the login page to get a cookie (this is what the frontend page does).
+        logger.debug("Login")
+
+        response = httpx.post(
+            f"{self.base_host}/login.cgi",
+            data={
+                "user_login": 1,
+                "account": user,
+                # WattBox internally truncates the password, so cut it off at 32 chars max
+                "password": password[:32],
+            },
+        )
+
+        self._cookies = response.cookies
+
+        if not self._cookies:
+            # Wattbox doesn't return a HTTP 400 if cookie auth fails,
+            # it just doesn't provide a cookie back.
+            raise Exception("Failed to authenticate!")
 
     # Get Initial Data
     def get_initial(self) -> None:
         logger.debug("Get Initial")
         response = httpx.get(
             f"{self.base_host}/wattbox_info.xml",
-            auth=(self.user, self.password),
+            cookies=self._cookies,
         )
         logger.debug(f"    Status: {response.status_code}")
         response.raise_for_status()
@@ -32,8 +55,7 @@ class HttpWattBox(BaseWattBox):
         logger.debug("Async Get Initial")
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{self.base_host}/wattbox_info.xml",
-                auth=(self.user, self.password),
+                f"{self.base_host}/wattbox_info.xml", cookies=self._cookies
             )
             logger.debug(f"    Status: {response.status_code}")
             response.raise_for_status()
@@ -75,8 +97,7 @@ class HttpWattBox(BaseWattBox):
     def update(self) -> None:
         logger.debug("Update")
         response = httpx.get(
-            f"{self.base_host}/wattbox_info.xml",
-            auth=(self.user, self.password),
+            f"{self.base_host}/wattbox_info.xml", cookies=self._cookies
         )
         logger.debug(f"    Status: {response.status_code}")
         response.raise_for_status()
@@ -86,8 +107,7 @@ class HttpWattBox(BaseWattBox):
         logger.debug("Async Update")
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{self.base_host}/wattbox_info.xml",
-                auth=(self.user, self.password),
+                f"{self.base_host}/wattbox_info.xml", cookies=self._cookies
             )
             logger.debug(f"    Status: {response.status_code}")
             response.raise_for_status()
@@ -163,7 +183,7 @@ class HttpWattBox(BaseWattBox):
         response = httpx.get(
             f"{self.base_host}/control.cgi",
             params={"outlet": outlet, "command": command.value},
-            auth=(self.user, self.password),
+            cookies=self._cookies,
         )
         logger.debug(f"    Status: {response.status_code}")
         response.raise_for_status()
@@ -174,7 +194,7 @@ class HttpWattBox(BaseWattBox):
             response = await client.get(
                 f"{self.base_host}/control.cgi",
                 params={"outlet": outlet, "command": command.value},
-                auth=(self.user, self.password),
+                cookies=self._cookies,
             )
             logger.debug(f"    Status: {response.status_code}")
             response.raise_for_status()
