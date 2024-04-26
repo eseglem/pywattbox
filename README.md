@@ -11,6 +11,14 @@ I suggest not using the admin account to run this code. Log into your WattBox an
 
 <!---->
 
+## Developing
+
+```
+python3 -m venv venv
+pip install poetry
+poetry install
+```
+
 ***
 
 [wattbox]: https://www.snapav.com/shop/en/snapav/wattbox
