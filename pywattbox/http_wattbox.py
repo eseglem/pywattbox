@@ -35,7 +35,7 @@ class HttpWattBox(BaseWattBox):
         self._cookies = response.cookies
 
         if not self._cookies:
-            # Wattbox doesn't return a HTTP 400 if cookie auth fails, 
+            # Wattbox doesn't return a HTTP 400 if cookie auth fails,
             # it just doesn't provide a cookie back.
             raise Exception("Failed to authenticate!")
 
@@ -55,8 +55,7 @@ class HttpWattBox(BaseWattBox):
         logger.debug("Async Get Initial")
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{self.base_host}/wattbox_info.xml",
-                cookies=self._cookies
+                f"{self.base_host}/wattbox_info.xml", cookies=self._cookies
             )
             logger.debug(f"    Status: {response.status_code}")
             response.raise_for_status()
@@ -98,8 +97,7 @@ class HttpWattBox(BaseWattBox):
     def update(self) -> None:
         logger.debug("Update")
         response = httpx.get(
-            f"{self.base_host}/wattbox_info.xml",
-            cookies=self._cookies
+            f"{self.base_host}/wattbox_info.xml", cookies=self._cookies
         )
         logger.debug(f"    Status: {response.status_code}")
         response.raise_for_status()
@@ -109,8 +107,7 @@ class HttpWattBox(BaseWattBox):
         logger.debug("Async Update")
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{self.base_host}/wattbox_info.xml",
-                cookies=self._cookies
+                f"{self.base_host}/wattbox_info.xml", cookies=self._cookies
             )
             logger.debug(f"    Status: {response.status_code}")
             response.raise_for_status()
@@ -186,7 +183,7 @@ class HttpWattBox(BaseWattBox):
         response = httpx.get(
             f"{self.base_host}/control.cgi",
             params={"outlet": outlet, "command": command.value},
-            cookies=self._cookies
+            cookies=self._cookies,
         )
         logger.debug(f"    Status: {response.status_code}")
         response.raise_for_status()
@@ -197,7 +194,7 @@ class HttpWattBox(BaseWattBox):
             response = await client.get(
                 f"{self.base_host}/control.cgi",
                 params={"outlet": outlet, "command": command.value},
-                cookies=self._cookies
+                cookies=self._cookies,
             )
             logger.debug(f"    Status: {response.status_code}")
             response.raise_for_status()
