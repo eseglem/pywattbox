@@ -17,7 +17,7 @@ class HttpWattBox(BaseWattBox):
         self.base_host: str = f"http://{host}:{port}"
         self.login(user, password)
 
-    def login(self, user, password):
+    def login(self, user: str, password: str) -> None:
         # It seems that non-admin users cannot use Basic authentication, they must
         # use the login page to get a cookie (this is what the frontend page does).
         logger.debug("Login")
