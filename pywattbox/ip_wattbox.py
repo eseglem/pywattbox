@@ -1,16 +1,12 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from enum import Enum
 from typing import (
     Any,
-    Dict,
     Final,
-    Iterable,
-    List,
     NamedTuple,
-    Optional,
-    Tuple,
     TypeVar,
     Union,
 )
@@ -64,7 +60,7 @@ class CONTROL_MESSAGES(Enum):
     SET_SDDP = "!SetSDDP={mode}"
 
 
-INITIAL_REQUESTS: Final[Tuple[REQUEST_MESSAGES, ...]] = (
+INITIAL_REQUESTS: Final[tuple[REQUEST_MESSAGES, ...]] = (
     REQUEST_MESSAGES.MODEL,
     REQUEST_MESSAGES.FIRMWARE,
     REQUEST_MESSAGES.UPS_CONNECTION,
@@ -83,7 +79,7 @@ class InitialResponses(NamedTuple):
     number_outlets: Response
 
 
-UPDATE_BASE_REQUESTS: Final[Tuple[REQUEST_MESSAGES, ...]] = (
+UPDATE_BASE_REQUESTS: Final[tuple[REQUEST_MESSAGES, ...]] = (
     REQUEST_MESSAGES.AUTO_REBOOT,
     REQUEST_MESSAGES.POWER_STATUS,
     REQUEST_MESSAGES.OUTLET_NAME,
@@ -112,7 +108,7 @@ class IpWattBox(BaseWattBox):
         user: str,
         password: str,
         port: int = 22,
-        transport: Optional[str] = None,
+        transport: str | None = None,
     ) -> None:
         super().__init__(host, user, password, port)
 
@@ -120,7 +116,7 @@ class IpWattBox(BaseWattBox):
         self.cloud_status = None
         self.outlet_power_status: bool = False
 
-        conninfo: Dict[str, Any] = {
+        conninfo: dict[str, Any] = {
             "host": host,
             "auth_username": user,
             "auth_password": password,
@@ -135,14 +131,14 @@ class IpWattBox(BaseWattBox):
                 raise ValueError("Non Standard Port, Transport must be set.")
 
         try:
-            self.driver: Optional[WattBoxDriver] = WattBoxDriver(
+            self.driver: WattBoxDriver | None = WattBoxDriver(
                 **conninfo,
                 transport="ssh2" if transport == "ssh" else "telnet",
             )
         except ScrapliTransportPluginError:
             self.driver = None
         try:
-            self.async_driver: Optional[WattBoxAsyncDriver] = WattBoxAsyncDriver(
+            self.async_driver: WattBoxAsyncDriver | None = WattBoxAsyncDriver(
                 **conninfo,
                 transport="asyncssh" if transport == "ssh" else "asynctelnet",
             )
@@ -150,11 +146,11 @@ class IpWattBox(BaseWattBox):
             self.async_driver = None
 
     def send_requests(
-        self, requests: Iterable[Union[REQUEST_MESSAGES, str]]
-    ) -> List[Response]:
+        self, requests: Iterable[REQUEST_MESSAGES | str]
+    ) -> list[Response]:
         if not self.driver:
             raise DriverUnavailableError
-        responses: List[Response] = []
+        responses: list[Response] = []
         for request in requests:
             responses.append(
                 self.driver._send_command(
@@ -164,11 +160,11 @@ class IpWattBox(BaseWattBox):
         return responses
 
     async def async_send_requests(
-        self, requests: Iterable[Union[REQUEST_MESSAGES, str]]
-    ) -> List[Response]:
+        self, requests: Iterable[REQUEST_MESSAGES | str]
+    ) -> list[Response]:
         if not self.async_driver:
             raise DriverUnavailableError
-        responses: List[Response] = []
+        responses: list[Response] = []
         for request in requests:
             responses.append(
                 await self.async_driver._send_command(
@@ -247,7 +243,7 @@ class IpWattBox(BaseWattBox):
             outlet.voltage_value = float(voltage)
 
     @property
-    def update_requests(self) -> Tuple[Union[REQUEST_MESSAGES, str], ...]:
+    def update_requests(self) -> tuple[REQUEST_MESSAGES | str, ...]:
         return (
             *UPDATE_BASE_REQUESTS,
             REQUEST_MESSAGES.UPS_STATUS,

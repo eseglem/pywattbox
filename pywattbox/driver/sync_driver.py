@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from io import BytesIO
-from typing import Any, Callable, Dict, Optional, Union
+from typing import Any
 
 from scrapli.decorators import timeout_modifier
 from scrapli.driver import Driver
@@ -31,7 +32,7 @@ class WattBoxDriver(Driver):
     def __init__(
         self,
         host: str,
-        port: Optional[int] = 22,
+        port: int | None = 22,
         auth_username: str = "",
         auth_password: str = "",
         auth_private_key: str = "",
@@ -43,14 +44,14 @@ class WattBoxDriver(Driver):
         timeout_ops: float = 5.0,
         comms_prompt_pattern: str = PROMPTS,
         comms_return_char: str = "\n",
-        ssh_config_file: Union[str, bool] = False,
-        ssh_known_hosts_file: Union[str, bool] = False,
-        on_init: Optional[Callable[..., Any]] = None,
-        on_open: Optional[Callable[..., Any]] = on_open,
-        on_close: Optional[Callable[..., Any]] = on_close,
+        ssh_config_file: str | bool = False,
+        ssh_known_hosts_file: str | bool = False,
+        on_init: Callable[..., Any] | None = None,
+        on_open: Callable[..., Any] | None = on_open,
+        on_close: Callable[..., Any] | None = on_close,
         transport: str = "ssh2",
-        transport_options: Optional[Dict[str, Any]] = None,
-        channel_log: Union[str, bool, BytesIO] = False,
+        transport_options: dict[str, Any] | None = None,
+        channel_log: str | bool | BytesIO = False,
         channel_log_mode: str = "write",
         channel_lock: bool = True,
         logging_uid: str = "",

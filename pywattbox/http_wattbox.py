@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from typing import List, Optional
 
 import httpx
 from bs4 import BeautifulSoup
@@ -152,7 +151,7 @@ class HttpWattBox(BaseWattBox):
         # Master switch is on if all those outlets are on
         if self.master_outlet is not None:
             # Gather statuses for outlets that have method on
-            statuses: List[Optional[bool]] = [
+            statuses: list[bool | None] = [
                 outlet.status for outlet in self.outlets.values() if outlet.method
             ]
             self.master_outlet.status = all(statuses)

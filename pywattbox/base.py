@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from enum import IntEnum
-from typing import Dict, Optional, Type, TypeVar
+from typing import TypeVar
 
 logger = logging.getLogger("pywattbox")
 
@@ -30,13 +30,13 @@ class BaseWattBox(ABC):
 
     def __init__(self, host: str, user: str, password: str, port: int) -> None:
         self.host: str = host
-        self.port: Optional[int] = port
+        self.port: int | None = port
         self.user: str = user
         self.password: str = password
 
         # Info, set once
-        self.hardware_version: Optional[str] = None
-        self.firmware_version: Optional[str] = None
+        self.hardware_version: str | None = None
+        self.firmware_version: str | None = None
         self.has_ups: bool = False
         self.hostname: str = ""
         self.number_outlets: int = 0
@@ -45,7 +45,7 @@ class BaseWattBox(ABC):
         # Status values
         self.audible_alarm: bool = False
         self.auto_reboot: bool = False
-        self.cloud_status: Optional[bool] = False
+        self.cloud_status: bool | None = False
         self.mute: bool = False
         self.power_lost: bool = False
 
@@ -59,12 +59,12 @@ class BaseWattBox(ABC):
         self.battery_charge: int = 0  # In percent
         self.battery_health: bool = False
         self.battery_load: int = 0  # In percent
-        self.battery_test: Optional[bool] = False
+        self.battery_test: bool | None = False
         self.est_run_time: int = 0  # In minutes
 
         # Outlets list
-        self.outlets: Dict[int, Outlet] = {}
-        self.master_outlet: Optional[Outlet] = None
+        self.outlets: dict[int, Outlet] = {}
+        self.master_outlet: Outlet | None = None
 
     @abstractmethod
     def get_initial(self) -> None:
@@ -95,7 +95,7 @@ _T_WattBox = TypeVar("_T_WattBox", bound=BaseWattBox)
 
 
 def _create_wattbox(
-    type_: Type[_T_WattBox], host: str, user: str, password: str, port: int
+    type_: type[_T_WattBox], host: str, user: str, password: str, port: int
 ) -> _T_WattBox:
     wattbox = type_(host=host, user=user, password=password, port=port)
     wattbox.get_initial()
@@ -104,7 +104,7 @@ def _create_wattbox(
 
 
 async def _async_create_wattbox(
-    type_: Type[_T_WattBox], host: str, user: str, password: str, port: int
+    type_: type[_T_WattBox], host: str, user: str, password: str, port: int
 ) -> _T_WattBox:
     wattbox = type_(host=host, user=user, password=password, port=port)
     await wattbox.async_get_initial()
@@ -115,13 +115,13 @@ async def _async_create_wattbox(
 class Outlet:
     def __init__(self, index: int, wattbox: BaseWattBox) -> None:
         self.index: int = index
-        self.method: Optional[bool] = None
-        self.name: Optional[str] = ""
-        self.status: Optional[bool] = None
+        self.method: bool | None = None
+        self.name: str | None = ""
+        self.status: bool | None = None
         # Power values
-        self.current_value: Optional[float] = None  # In Amps
-        self.power_value: Optional[float] = None  # In watts
-        self.voltage_value: Optional[float] = None  # In volts
+        self.current_value: float | None = None  # In Amps
+        self.power_value: float | None = None  # In watts
+        self.voltage_value: float | None = None  # In volts
         # The WattBox
         self.wattbox: BaseWattBox = wattbox
 
