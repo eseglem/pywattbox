@@ -15,6 +15,10 @@ class HttpWattBox(BaseWattBox):
         super().__init__(host, user, password, port)
         self.base_host: str = f"http://{host}:{port}"
 
+        # This only supports http, so there is no reason to load the certs.
+        # Create and re-use a single client rather than a new one every request.
+        self.async_client: httpx.AsyncClient = httpx.AsyncClient(verify=False)
+
     # Get Initial Data
     def get_initial(self) -> None:
         logger.debug("Get Initial")
@@ -29,13 +33,12 @@ class HttpWattBox(BaseWattBox):
 
     async def async_get_initial(self) -> None:
         logger.debug("Async Get Initial")
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{self.base_host}/wattbox_info.xml",
-                auth=(self.user, self.password),
-            )
-            logger.debug(f"    Status: {response.status_code}")
-            response.raise_for_status()
+        response = await self.async_client.get(
+            f"{self.base_host}/wattbox_info.xml",
+            auth=(self.user, self.password),
+        )
+        logger.debug(f"    Status: {response.status_code}")
+        response.raise_for_status()
         self.parse_initial(response)
         self.parse_update(response)
 
@@ -83,13 +86,12 @@ class HttpWattBox(BaseWattBox):
 
     async def async_update(self) -> None:
         logger.debug("Async Update")
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{self.base_host}/wattbox_info.xml",
-                auth=(self.user, self.password),
-            )
-            logger.debug(f"    Status: {response.status_code}")
-            response.raise_for_status()
+        response = await self.async_client.get(
+            f"{self.base_host}/wattbox_info.xml",
+            auth=(self.user, self.password),
+        )
+        logger.debug(f"    Status: {response.status_code}")
+        response.raise_for_status()
         self.parse_update(response)
 
     # Parse Update Data
@@ -169,14 +171,13 @@ class HttpWattBox(BaseWattBox):
 
     async def async_send_command(self, outlet: int, command: Commands) -> None:
         logger.debug("Async Send Command")
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{self.base_host}/control.cgi",
-                params={"outlet": outlet, "command": command.value},
-                auth=(self.user, self.password),
-            )
-            logger.debug(f"    Status: {response.status_code}")
-            response.raise_for_status()
+        response = await self.async_client.get(
+            f"{self.base_host}/control.cgi",
+            params={"outlet": outlet, "command": command.value},
+            auth=(self.user, self.password),
+        )
+        logger.debug(f"    Status: {response.status_code}")
+        response.raise_for_status()
 
     # Verify command is master eligible
     def check_master_command(self, command: Commands) -> None:

@@ -116,12 +116,16 @@ class IpWattBox(BaseWattBox):
         self.cloud_status = None
         self.outlet_power_status: bool = False
 
-        conninfo: dict[str, Any] = {
+        self._driver: WattBoxDriver | None = None
+        self._async_driver: WattBoxAsyncDriver | None = None
+
+        self._conninfo: dict[str, Any] = {
             "host": host,
             "auth_username": user,
             "auth_password": password,
             "port": port,
         }
+
         if transport is None:
             if port == 22:
                 transport = "ssh"
@@ -129,27 +133,35 @@ class IpWattBox(BaseWattBox):
                 transport = "telnet"
             else:
                 raise ValueError("Non Standard Port, Transport must be set.")
+        self._transport = transport
 
-        try:
-            self.driver: WattBoxDriver | None = WattBoxDriver(
-                **conninfo,
-                transport="ssh2" if transport == "ssh" else "telnet",
-            )
-        except ScrapliTransportPluginError:
-            self.driver = None
-        try:
-            self.async_driver: WattBoxAsyncDriver | None = WattBoxAsyncDriver(
-                **conninfo,
-                transport="asyncssh" if transport == "ssh" else "asynctelnet",
-            )
-        except ScrapliTransportPluginError:
-            self.async_driver = None
+    @property
+    def driver(self) -> WattBoxDriver:
+        if not self._driver:
+            try:
+                self._driver = WattBoxDriver(
+                    **self._conninfo,
+                    transport="ssh2" if self._transport == "ssh" else "telnet",
+                )
+            except ScrapliTransportPluginError as err:
+                raise DriverUnavailableError from err
+        return self._driver
+
+    @property
+    def async_driver(self) -> WattBoxAsyncDriver:
+        if not self._async_driver:
+            try:
+                self._async_driver = WattBoxAsyncDriver(
+                    **self._conninfo,
+                    transport="asyncssh" if self._transport == "ssh" else "asynctelnet",
+                )
+            except ScrapliTransportPluginError as err:
+                raise DriverUnavailableError from err
+        return self._async_driver
 
     def send_requests(
         self, requests: Iterable[REQUEST_MESSAGES | str]
     ) -> list[Response]:
-        if not self.driver:
-            raise DriverUnavailableError
         responses: list[Response] = []
         for request in requests:
             responses.append(
@@ -162,8 +174,6 @@ class IpWattBox(BaseWattBox):
     async def async_send_requests(
         self, requests: Iterable[REQUEST_MESSAGES | str]
     ) -> list[Response]:
-        if not self.async_driver:
-            raise DriverUnavailableError
         responses: list[Response] = []
         for request in requests:
             responses.append(
