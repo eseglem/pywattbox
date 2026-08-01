@@ -1,8 +1,11 @@
 """Wire-level fixtures for WB-800-IPVM-6, firmware 2.10.0.0.
 
 Transcribed from a live capture of a deployed unit (dropbear_2025.88 SSH
-server, telnet API on port 23). Serial number and outlet names are altered;
-every response *shape* is verbatim.
+server, telnet API on port 23). Response *shapes*, field counts, numeric
+formats and framing are verbatim. The service tag and outlet names are
+substitutes chosen to preserve the properties under test -- embedded spaces,
+digits, varying lengths and repeated values -- without identifying a real
+site.
 
 What the capture established, some of it contrary to
 eseglem/hass-wattbox#55:
@@ -25,8 +28,8 @@ eseglem/hass-wattbox#55:
 
 from __future__ import annotations
 
-# Names as captured: spaces and digits, brace wrapped, comma separated. A
-# parser that reads only up to the first whitespace truncates these.
+# Brace wrapped, comma separated, with embedded spaces and digits. A parser
+# that reads only up to the first whitespace truncates these.
 OUTLET_NAMES = (
     "Media Bridge 1 to 3",
     "Streaming Box 06 Study",
