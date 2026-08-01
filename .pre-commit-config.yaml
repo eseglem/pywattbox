@@ -25,12 +25,16 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
-  - repo: local
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.20.2
     hooks:
       - id: mypy
         name: Run Mypy
         files: ^pywattbox/
-        types: [python]
-        language: system
-        entry: mypy --config-file=pyproject.toml pywattbox/
+        args: ["--config-file=pyproject.toml", "pywattbox/"]
         pass_filenames: false
+        additional_dependencies:
+          - beautifulsoup4
+          - httpx
+          - scrapli
+          - types-beautifulsoup4
