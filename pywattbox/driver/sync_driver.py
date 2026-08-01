@@ -7,17 +7,55 @@ from typing import Any
 
 from scrapli.decorators import timeout_modifier
 from scrapli.driver import Driver
-from scrapli.exceptions import ScrapliConnectionNotOpened
+from scrapli.exceptions import ScrapliConnectionNotOpened, ScrapliTimeout
 from scrapli.response import Response
 
-from . import PROMPTS
+from . import (
+    LOGIN_SUCCESS,
+    PASSWORD_PROMPT,
+    PROMPTS,
+    TELNET_TRANSPORTS,
+    USERNAME_PROMPT,
+    find_reply,
+)
 
 logger = logging.getLogger("pywattbox.sync_driver")
 
 
+def _read_until_token(driver: WattBoxDriver, token: bytes) -> bytes:
+    """Accumulate channel reads until *token* appears.
+
+    Raises:
+        ScrapliTimeout: if the transport stops producing data first.
+    """
+    buf = b""
+    while token not in buf:
+        chunk = driver.channel.read()
+        if not chunk:
+            raise ScrapliTimeout(
+                f"connection closed while waiting for {token!r}, got {buf!r}"
+            )
+        buf += chunk
+    return buf
+
+
 def on_open(driver: WattBoxDriver) -> None:
-    if driver.transport_name not in ("telnet", "asynctelnet"):
+    """Complete the login handshake. Mirrors the async driver's ``on_open``."""
+    logger.debug("On Open")
+    if driver.transport_name not in TELNET_TRANSPORTS:
         driver.channel._read_until_prompt()
+        return
+
+    _read_until_token(driver, USERNAME_PROMPT)
+    driver.channel.write(driver.auth_username)
+    driver.channel.send_return()
+
+    _read_until_token(driver, PASSWORD_PROMPT)
+    driver.channel.write(driver.auth_password)
+    driver.channel.send_return()
+
+    _read_until_token(driver, LOGIN_SUCCESS)
+    logger.debug("Telnet login complete")
 
 
 def on_close(driver: WattBoxDriver) -> None:
@@ -56,6 +94,11 @@ class WattBoxDriver(Driver):
         channel_lock: bool = True,
         logging_uid: str = "",
     ) -> None:
+        if transport in TELNET_TRANSPORTS:
+            # scrapli's in-channel telnet auth does not satisfy the WattBox
+            # login prompt; `on_open` performs the handshake by hand instead.
+            auth_bypass = True
+
         super().__init__(
             host=host,
             port=port,
@@ -92,18 +135,19 @@ class WattBoxDriver(Driver):
         self,
         command: str,
     ) -> Response:
-        """Send a command.
+        """Send one request and return its single-line reply.
 
-        Based on:
-            scrapli.driver.generic.sync_driver.GenericDriver: send_command and _send_command
-            scrapli.channel.sync_channel.Channel: send_input
+        Synchronous mirror of ``WattBoxAsyncDriver._send_command``; see that
+        method for why scrapli's prompt matching is not usable here.
 
         Args:
-            command: string to send to device in privilege exec mode
-            failed_when_contains: string or list of strings indicating failure if found in response
+            command: request (``?``) or control (``!``) message to send
 
         Returns:
-            Response: Scrapli Response object
+            Response: scrapli Response whose ``result`` is the reply value
+
+        Raises:
+            ScrapliTimeout: if the device sends no usable reply
         """
         self._open()
 
@@ -113,42 +157,35 @@ class WattBoxDriver(Driver):
             failed_when_contains="#Error",
         )
 
-        # Normally handled in the channel `send_input`, but WattBox is special and doesn't work
-        # with that function. Pulled it all into the Driver for simplicity.
+        logger.debug("Sending Command: %s", command)
+
+        raw_response = b""
         with self.channel._channel_lock():
             self.channel.write(command)
             self.channel.send_return()
-            raw_response = self.channel._read_until_prompt()
 
-            logger.debug("raw_response: %s", raw_response)
-            split_response = raw_response.strip().splitlines()
-            logger.debug("split_response: %s", split_response)
-            if (
-                self.transport not in ("telnet", "asynctelnet")
-                and len(split_response) < 2
-            ):
-                logger.error("Not enough lines: %s. Getting more", len(split_response))
-                raw_response += self.channel._read_until_prompt()
-                logger.debug("raw_response: %s", raw_response)
-                split_response = raw_response.strip().splitlines()
-                logger.debug("split_response: %s", split_response)
+            while True:
+                try:
+                    chunk = self.channel.read()
+                except ScrapliTimeout:
+                    logger.debug("Read timed out for %s", command)
+                    break
+                if not chunk:
+                    logger.debug("Connection closed while reading %s", command)
+                    break
+                raw_response += chunk
+                if find_reply(raw_response, command) is not None:
+                    break
 
-        if (
-            self.transport not in ("telnet", "asynctelnet")
-            and split_response[0] != command.encode()
-        ):
-            logger.error("Doesn't match command: %s - %s", command, split_response[0])
-
-        if command.startswith("?"):
-            if not split_response[-1].startswith(command.encode()):
-                logger.error(
-                    "Expected response to start with: %s, Got %s",
-                    command,
-                    split_response[-1],
-                )
-            processed_response = split_response[1].split(b"=")[-1]
-        else:
-            processed_response = split_response[-1]
+        logger.debug("raw_response: %s", raw_response)
+        processed_response = find_reply(raw_response, command)
+        if processed_response is None:
+            processed_response = find_reply(raw_response, command, strict=False)
+        if processed_response is None:
+            raise ScrapliTimeout(
+                f"no reply to {command!r} from {self._base_transport_args.host}; "
+                f"read {raw_response!r}"
+            )
 
         logger.debug("processed_response: %s", processed_response)
         response.record_response(processed_response)

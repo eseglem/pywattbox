@@ -254,9 +254,12 @@ class IpWattBox(BaseWattBox):
 
     @property
     def update_requests(self) -> tuple[REQUEST_MESSAGES | str, ...]:
+        # UPS status is only requested when a UPS is actually attached. Asking
+        # a unit without one wastes a round trip and yields a reply that
+        # `parse_ups_status` cannot parse.
         return (
             *UPDATE_BASE_REQUESTS,
-            REQUEST_MESSAGES.UPS_STATUS,
+            *((REQUEST_MESSAGES.UPS_STATUS,) if self.has_ups else ()),
             *(
                 (
                     REQUEST_MESSAGES.OUTLET_POWER_STATUS.value.format(
@@ -269,21 +272,27 @@ class IpWattBox(BaseWattBox):
             ),
         )
 
+    def _parse_update(self, responses: list[Response]) -> None:
+        """Dispatch update responses, honouring the optional request blocks.
+
+        The response list mirrors `update_requests`, so the offsets have to be
+        derived from the same flags rather than hard coded.
+        """
+        offset = len(UPDATE_BASE_REQUESTS)
+        self.parse_update_base(UpdateBaseResponses(*responses[:offset]))
+        if self.has_ups:
+            self.parse_ups_status(responses[offset])
+            offset += 1
+        if self.outlet_power_status:
+            self.parse_outlet_power_statuses(responses[offset:])
+
     def update(self) -> None:
         logger.debug("Update")
-        responses = self.send_requests(self.update_requests)
-        self.parse_update_base(UpdateBaseResponses(*responses[0:4]))
-        self.parse_ups_status(responses[4])
-        if self.outlet_power_status:
-            self.parse_outlet_power_statuses(responses[5:])
+        self._parse_update(self.send_requests(self.update_requests))
 
     async def async_update(self) -> None:
         logger.debug("Async Update")
-        responses = await self.async_send_requests(self.update_requests)
-        self.parse_update_base(UpdateBaseResponses(*responses[0:4]))
-        self.parse_ups_status(responses[4])
-        if self.outlet_power_status:
-            self.parse_outlet_power_statuses(responses[5:])
+        self._parse_update(await self.async_send_requests(self.update_requests))
 
     def send_command(self, outlet: int, command: Commands) -> None:
         logger.debug("Send Command")

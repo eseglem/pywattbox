@@ -7,18 +7,63 @@ from typing import Any
 
 from scrapli.decorators import timeout_modifier
 from scrapli.driver import AsyncDriver
-from scrapli.exceptions import ScrapliConnectionNotOpened
+from scrapli.exceptions import ScrapliConnectionNotOpened, ScrapliTimeout
 from scrapli.response import Response
 
-from . import PROMPTS
+from . import (
+    LOGIN_SUCCESS,
+    PASSWORD_PROMPT,
+    PROMPTS,
+    TELNET_TRANSPORTS,
+    USERNAME_PROMPT,
+    find_reply,
+)
 
 logger = logging.getLogger("pywattbox.async_driver")
 
 
+async def _read_until_token(driver: WattBoxAsyncDriver, token: bytes) -> bytes:
+    """Accumulate channel reads until *token* appears.
+
+    Raises:
+        ScrapliTimeout: if the transport stops producing data first.
+    """
+    buf = b""
+    while token not in buf:
+        chunk = await driver.channel.read()
+        if not chunk:
+            raise ScrapliTimeout(
+                f"connection closed while waiting for {token!r}, got {buf!r}"
+            )
+        buf += chunk
+    return buf
+
+
 async def on_open(driver: WattBoxAsyncDriver) -> None:
-    # if driver.transport_name not in ("telnet", "asynctelnet"):
+    """Complete the login handshake.
+
+    Over SSH the transport authenticates and we only need to consume the
+    banner. Over telnet the device presents its own ``Username:``/``Password:``
+    prompts, which scrapli's in-channel telnet auth does not satisfy (it is
+    rejected as ``Invalid Login``), so authentication is bypassed at the
+    transport level -- see ``WattBoxAsyncDriver.__init__`` -- and performed
+    here instead.
+    """
     logger.debug("On Open")
-    await driver.channel._read_until_prompt()
+    if driver.transport_name not in TELNET_TRANSPORTS:
+        await driver.channel._read_until_prompt()
+        return
+
+    await _read_until_token(driver, USERNAME_PROMPT)
+    driver.channel.write(driver.auth_username)
+    driver.channel.send_return()
+
+    await _read_until_token(driver, PASSWORD_PROMPT)
+    driver.channel.write(driver.auth_password)
+    driver.channel.send_return()
+
+    await _read_until_token(driver, LOGIN_SUCCESS)
+    logger.debug("Telnet login complete")
 
 
 async def on_close(driver: WattBoxAsyncDriver) -> None:
@@ -57,6 +102,11 @@ class WattBoxAsyncDriver(AsyncDriver):
         channel_lock: bool = True,
         logging_uid: str = "",
     ) -> None:
+        if transport in TELNET_TRANSPORTS:
+            # scrapli's in-channel telnet auth does not satisfy the WattBox
+            # login prompt; `on_open` performs the handshake by hand instead.
+            auth_bypass = True
+
         super().__init__(
             host=host,
             port=port,
@@ -93,18 +143,26 @@ class WattBoxAsyncDriver(AsyncDriver):
         self,
         command: str,
     ) -> Response:
-        """Send a command.
+        """Send one request and return its single-line reply.
 
-        Based on:
-            scrapli.driver.generic.async_driver.GenericDriver: send_command and _send_command
-            scrapli.channel.async_channel.Channel: send_input
+        Reads until a *complete* reply line for this command arrives, rather
+        than relying on scrapli's prompt matching. Three properties of the
+        WattBox protocol make prompt matching unsuitable here:
+
+        * replies carry no trailing prompt, so there is nothing to anchor on
+        * values contain spaces and commas, so a whitespace-delimited pattern
+          truncates them
+        * the reply is not echoed over telnet, so its position in the buffer
+          is transport dependent
 
         Args:
-            command: string to send to device in privilege exec mode
-            failed_when_contains: string or list of strings indicating failure if found in response
+            command: request (``?``) or control (``!``) message to send
 
         Returns:
-            Response: Scrapli Response object
+            Response: scrapli Response whose ``result`` is the reply value
+
+        Raises:
+            ScrapliTimeout: if the device sends no usable reply
         """
         await self._open()
 
@@ -116,42 +174,38 @@ class WattBoxAsyncDriver(AsyncDriver):
 
         logger.debug("Sending Command: %s", command)
 
-        # Normally handled in the channel `send_input`, but WattBox is special and doesn't work
-        # with that function. Pulled it all into the Driver for simplicity.
+        # Normally handled by the channel's `send_input`, but this protocol has
+        # no prompt for scrapli to synchronise on, so the exchange is driven
+        # here instead.
+        raw_response = b""
         async with self.channel._channel_lock():
             self.channel.write(command)
             self.channel.send_return()
-            raw_response = await self.channel._read_until_prompt()
 
-            logger.debug("raw_response: %s", raw_response)
-            split_response = raw_response.strip().splitlines()
-            logger.debug("split_response: %s", split_response)
-            if (
-                self.transport not in ("telnet", "asynctelnet")
-                and len(split_response) < 2
-            ):
-                logger.debug("Not enough lines: %s. Getting more", len(split_response))
-                raw_response += await self.channel._read_until_prompt()
-                logger.debug("raw_response: %s", raw_response)
-                split_response = raw_response.strip().splitlines()
-                logger.debug("split_response: %s", split_response)
+            while True:
+                try:
+                    chunk = await self.channel.read()
+                except ScrapliTimeout:
+                    logger.debug("Read timed out for %s", command)
+                    break
+                if not chunk:
+                    logger.debug("Connection closed while reading %s", command)
+                    break
+                raw_response += chunk
+                if find_reply(raw_response, command) is not None:
+                    break
 
-        if (
-            self.transport not in ("telnet", "asynctelnet")
-            and split_response[0] != command.encode()
-        ):
-            logger.error("Doesn't match command: %s - %s", command, split_response[0])
-
-        if command.startswith("?"):
-            if not split_response[-1].startswith(command.encode()):
-                logger.error(
-                    "Expected response to start with: %s, Got %s",
-                    command,
-                    split_response[-1],
-                )
-            processed_response = split_response[1].split(b"=")[-1]
-        else:
-            processed_response = split_response[-1]
+        logger.debug("raw_response: %s", raw_response)
+        # Fall back to a newline-less match only after reading has stopped, for
+        # a device that closes the connection without terminating the line.
+        processed_response = find_reply(raw_response, command)
+        if processed_response is None:
+            processed_response = find_reply(raw_response, command, strict=False)
+        if processed_response is None:
+            raise ScrapliTimeout(
+                f"no reply to {command!r} from {self._base_transport_args.host}; "
+                f"read {raw_response!r}"
+            )
 
         logger.debug("processed_response: %s", processed_response)
         response.record_response(processed_response)
