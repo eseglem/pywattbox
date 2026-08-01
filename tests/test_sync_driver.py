@@ -17,7 +17,7 @@ from scrapli.exceptions import ScrapliTimeout
 from pywattbox.driver.sync_driver import WattBoxDriver
 
 from .conftest import FakeDevice
-from .fixtures import OUTLET_NAMES, WB800_IPVM_6
+from .fixtures import ERROR_REPLIES, OUTLET_NAMES, WB800_IPVM_6
 
 
 class SyncFakeChannel:
@@ -80,7 +80,7 @@ def test_outlet_name_with_spaces_is_not_truncated(make_sync_driver) -> None:
 
 
 def test_error_reply_is_flagged(make_sync_driver) -> None:
-    driver = make_sync_driver(FakeDevice(WB800_IPVM_6, echo=False))
+    driver = make_sync_driver(FakeDevice({**WB800_IPVM_6, **ERROR_REPLIES}, echo=False))
 
     response = driver._send_command("?UPSStatus")
 

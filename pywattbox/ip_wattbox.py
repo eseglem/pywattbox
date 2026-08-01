@@ -254,12 +254,13 @@ class IpWattBox(BaseWattBox):
 
     @property
     def update_requests(self) -> tuple[REQUEST_MESSAGES | str, ...]:
-        # UPS status is only requested when a UPS is actually attached. Asking
-        # a unit without one wastes a round trip and yields a reply that
-        # `parse_ups_status` cannot parse.
+        # UPS status is requested unconditionally. A unit with no UPS still
+        # answers with a well-formed tuple (`0,0,Good,False,0,False,False` on
+        # WB-800-IPVM-6 / fw 2.10.0.0), and `power_lost` from that reply backs
+        # a binary sensor that must keep reporting on such units.
         return (
             *UPDATE_BASE_REQUESTS,
-            *((REQUEST_MESSAGES.UPS_STATUS,) if self.has_ups else ()),
+            REQUEST_MESSAGES.UPS_STATUS,
             *(
                 (
                     REQUEST_MESSAGES.OUTLET_POWER_STATUS.value.format(
@@ -273,16 +274,14 @@ class IpWattBox(BaseWattBox):
         )
 
     def _parse_update(self, responses: list[Response]) -> None:
-        """Dispatch update responses, honouring the optional request blocks.
+        """Dispatch update responses in the order `update_requests` built them.
 
-        The response list mirrors `update_requests`, so the offsets have to be
-        derived from the same flags rather than hard coded.
+        Shared by `update` and `async_update` so the two cannot drift apart.
         """
         offset = len(UPDATE_BASE_REQUESTS)
         self.parse_update_base(UpdateBaseResponses(*responses[:offset]))
-        if self.has_ups:
-            self.parse_ups_status(responses[offset])
-            offset += 1
+        self.parse_ups_status(responses[offset])
+        offset += 1
         if self.outlet_power_status:
             self.parse_outlet_power_statuses(responses[offset:])
 

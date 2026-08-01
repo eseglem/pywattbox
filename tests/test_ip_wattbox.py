@@ -51,49 +51,46 @@ async def test_update_populates_names_status_and_power(wattbox) -> None:
 
     # Names survive spaces and parentheses, and the braces are stripped.
     assert [box.outlets[i].name for i in range(1, 7)] == list(OUTLET_NAMES)
-    assert [box.outlets[i].status for i in range(1, 7)] == [
-        True,
-        True,
-        True,
-        True,
-        True,
-        False,
-    ]
-    assert box.current_value == 0.4
-    assert box.power_value == 48.0
-    assert box.voltage_value == 120.0
-    assert box.outlets[2].power_value == 21.4
-    assert box.outlets[2].voltage_value == 120.0
+    assert all(box.outlets[i].status for i in range(1, 7))
+    assert box.current_value == 0.43
+    assert box.power_value == 68.87
+    assert box.voltage_value == 119.88
+    assert box.outlets[2].power_value == 21.40
+    assert box.outlets[2].voltage_value == 119.88
 
 
-async def test_update_skips_ups_request_without_a_ups(wattbox) -> None:
-    """A unit with no UPS must not be asked for UPS status.
+async def test_update_succeeds_on_a_unit_without_a_ups(wattbox) -> None:
+    """A unit with no UPS still answers ``?UPSStatus`` with a valid tuple.
 
-    Asking wastes a round trip on every poll and returns a reply that
-    ``parse_ups_status`` cannot handle -- which aborted the entire update.
+    Captured from hardware: ``?UPSConnection=0`` alongside
+    ``?UPSStatus=0,0,Good,False,0,False,False``. ``power_lost`` from that
+    reply backs a binary sensor, so the request must not be skipped just
+    because no UPS is attached.
     """
     box, device = wattbox()
     await box.async_get_initial()
+    assert box.has_ups is False
     device.received.clear()
 
     await box.async_update()
 
-    assert "?UPSStatus" not in device.received
+    assert "?UPSStatus" in device.received
+    assert box.power_lost is False
+    assert box.battery_charge == 0
 
 
-async def test_update_requests_ups_status_when_a_ups_is_present(wattbox) -> None:
+async def test_update_parses_ups_status_when_a_ups_is_present(wattbox) -> None:
     replies = {
         **WB800_IPVM_6,
         "?UPSConnection": b"?UPSConnection=1\n",
         "?UPSStatus": b"?UPSStatus=100,12,Good,False,45,False,False\n",
     }
-    box, device = wattbox(replies)
+    box, _ = wattbox(replies)
     await box.async_get_initial()
     assert box.has_ups is True
 
     await box.async_update()
 
-    assert "?UPSStatus" in device.received
     assert box.battery_charge == 100
     assert box.battery_health is True
     assert box.power_lost is False
@@ -108,7 +105,7 @@ async def test_update_works_when_replies_are_fragmented(wattbox) -> None:
     await box.async_update()
 
     assert box.outlets[1].name == "Media Bridge 1 to 3"
-    assert box.power_value == 48.0
+    assert box.power_value == 68.87
 
 
 async def test_update_works_over_an_echoing_transport(wattbox) -> None:
@@ -122,5 +119,5 @@ async def test_update_works_over_an_echoing_transport(wattbox) -> None:
 
     await box.async_update()
 
-    assert box.outlets[1].power_value == 17.9
-    assert box.outlets[6].power_value == 0.0
+    assert box.outlets[1].power_value == 12.62
+    assert box.outlets[6].power_value == 0.79

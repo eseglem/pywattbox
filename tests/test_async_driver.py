@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 
 from .conftest import FakeDevice
-from .fixtures import CONTROL_OK, OUTLET_NAMES, WB800_IPVM_6
+from .fixtures import CONTROL_OK, ERROR_REPLIES, OUTLET_NAMES, WB800_IPVM_6
 
 pytestmark = pytest.mark.asyncio
 
@@ -55,12 +55,16 @@ async def test_ssh_with_echo_returns_value(make_driver) -> None:
 
 
 async def test_error_reply_is_reported_not_hung(make_driver) -> None:
-    """``?UPSStatus`` on a unit with no UPS answers ``#Error``.
+    """An ``#Error`` reply must be flagged, not waited out.
 
-    The driver must return promptly and flag the failure rather than reading
-    until the timeout looking for a value that will never arrive.
+    WB-800-IPVM-6 on fw 2.10.0.0 was never observed returning ``#Error`` for
+    any read-only request, but the protocol documents it and other integrators
+    report it, so the path is pinned here with a synthetic reply.
     """
-    driver = make_driver(FakeDevice(WB800_IPVM_6, echo=False), transport="asynctelnet")
+    driver = make_driver(
+        FakeDevice({**WB800_IPVM_6, **ERROR_REPLIES}, echo=False),
+        transport="asynctelnet",
+    )
 
     response = await driver._send_command("?UPSStatus")
 
@@ -95,4 +99,4 @@ async def test_outlet_power_status_indexed_reply(make_driver) -> None:
 
     response = await driver._send_command("?OutletPowerStatus=2")
 
-    assert response.result == "2,21.4,0.2,120.0"
+    assert response.result == "2,21.40,0.18,119.88"
