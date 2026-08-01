@@ -315,6 +315,24 @@ class IpWattBox(BaseWattBox):
         )
         await self.async_update()
 
+    def close(self) -> None:
+        """Close the connection, releasing the session on the device.
+
+        The 800 series caps concurrent sessions, so a consumer that
+        re-creates its WattBox -- a Home Assistant config entry reload, for
+        instance -- eventually locks itself out unless the old connection is
+        closed. Safe to call when never opened or already closed.
+        """
+        if self._driver is not None and self._driver.transport.isalive():
+            logger.debug("Closing driver")
+            self._driver.close()
+
+    async def async_close(self) -> None:
+        """Async counterpart to `close`."""
+        if self._async_driver is not None and self._async_driver.transport.isalive():
+            logger.debug("Closing async driver")
+            await self._async_driver.close()
+
     # String Representation
     def __str__(self) -> str:
         return f"{self.hostname} ({self.host}): {self.hardware_version}"

@@ -121,3 +121,32 @@ async def test_update_works_over_an_echoing_transport(wattbox) -> None:
 
     assert box.outlets[1].power_value == 12.62
     assert box.outlets[6].power_value == 0.79
+
+
+async def test_close_is_safe_when_never_connected(wattbox) -> None:
+    """Closing a WattBox that never opened a connection must not raise."""
+    box, _ = wattbox()
+
+    await box.async_close()  # no driver was ever created
+    box.close()
+
+
+async def test_close_releases_the_session(wattbox) -> None:
+    """The 800s cap concurrent sessions, so reloads must release theirs."""
+    box, _ = wattbox()
+    await box.async_get_initial()
+
+    closed = False
+
+    async def _close() -> None:
+        nonlocal closed
+        closed = True
+
+    box._async_driver.close = _close  # type: ignore[method-assign]
+    box._async_driver.transport = type(
+        "T", (), {"isalive": staticmethod(lambda: True)}
+    )()
+
+    await box.async_close()
+
+    assert closed, "async_close must close the underlying driver"
