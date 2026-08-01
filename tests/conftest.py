@@ -13,9 +13,9 @@ firmware 2.10.0.0 -- see tests/fixtures.py.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from io import SEEK_END, BytesIO
-from typing import Callable
 
 import pytest
 from scrapli.channel.base_channel import BaseChannel, BaseChannelArgs

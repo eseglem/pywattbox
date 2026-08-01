@@ -20,7 +20,8 @@ WB-800-IPVM units on firmware 2.10.0.0:
 from __future__ import annotations
 
 import re
-from typing import Final, Pattern
+from re import Pattern
+from typing import Final
 
 #: Channel prompt pattern, compiled by scrapli with ``re.M | re.I``.
 #:
