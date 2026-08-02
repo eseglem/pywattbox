@@ -254,6 +254,10 @@ class IpWattBox(BaseWattBox):
 
     @property
     def update_requests(self) -> tuple[REQUEST_MESSAGES | str, ...]:
+        # UPS status is requested unconditionally. A unit with no UPS still
+        # answers with a well-formed tuple (`0,0,Good,False,0,False,False` on
+        # WB-800-IPVM-6 / fw 2.10.0.0), and `power_lost` from that reply backs
+        # a binary sensor that must keep reporting on such units.
         return (
             *UPDATE_BASE_REQUESTS,
             REQUEST_MESSAGES.UPS_STATUS,
@@ -269,21 +273,25 @@ class IpWattBox(BaseWattBox):
             ),
         )
 
+    def _parse_update(self, responses: list[Response]) -> None:
+        """Dispatch update responses in the order `update_requests` built them.
+
+        Shared by `update` and `async_update` so the two cannot drift apart.
+        """
+        offset = len(UPDATE_BASE_REQUESTS)
+        self.parse_update_base(UpdateBaseResponses(*responses[:offset]))
+        self.parse_ups_status(responses[offset])
+        offset += 1
+        if self.outlet_power_status:
+            self.parse_outlet_power_statuses(responses[offset:])
+
     def update(self) -> None:
         logger.debug("Update")
-        responses = self.send_requests(self.update_requests)
-        self.parse_update_base(UpdateBaseResponses(*responses[0:4]))
-        self.parse_ups_status(responses[4])
-        if self.outlet_power_status:
-            self.parse_outlet_power_statuses(responses[5:])
+        self._parse_update(self.send_requests(self.update_requests))
 
     async def async_update(self) -> None:
         logger.debug("Async Update")
-        responses = await self.async_send_requests(self.update_requests)
-        self.parse_update_base(UpdateBaseResponses(*responses[0:4]))
-        self.parse_ups_status(responses[4])
-        if self.outlet_power_status:
-            self.parse_outlet_power_statuses(responses[5:])
+        self._parse_update(await self.async_send_requests(self.update_requests))
 
     def send_command(self, outlet: int, command: Commands) -> None:
         logger.debug("Send Command")
@@ -306,6 +314,24 @@ class IpWattBox(BaseWattBox):
             )
         )
         await self.async_update()
+
+    def close(self) -> None:
+        """Close the connection, releasing the session on the device.
+
+        The 800 series caps concurrent sessions, so a consumer that
+        re-creates its WattBox -- a Home Assistant config entry reload, for
+        instance -- eventually locks itself out unless the old connection is
+        closed. Safe to call when never opened or already closed.
+        """
+        if self._driver is not None and self._driver.transport.isalive():
+            logger.debug("Closing driver")
+            self._driver.close()
+
+    async def async_close(self) -> None:
+        """Async counterpart to `close`."""
+        if self._async_driver is not None and self._async_driver.transport.isalive():
+            logger.debug("Closing async driver")
+            await self._async_driver.close()
 
     # String Representation
     def __str__(self) -> str:

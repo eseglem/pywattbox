@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pywattbox"
-version = "0.9.0"
+version = "0.9.1"
 description = "A python wrapper for WattBox APIs."
 license = "MIT"
 readme = "README.md"
@@ -42,8 +42,14 @@ optional = true
 [tool.poetry.group.dev.dependencies]
 mypy = { version = "^1.9" }
 pre-commit = { version = "*" }
+pytest = { version = "*" }
+pytest-asyncio = { version = "*" }
 ruff = { version = "*" }
 types-beautifulsoup4 = { version = "*" }
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
