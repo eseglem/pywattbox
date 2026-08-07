@@ -17,5 +17,10 @@ PROMPTS: Final[str] = (
     r"|(?:\?\w+=[^\n]*)"  # Response to `?` request message
     r"|(?:OK)"  # Response to `!` control message
     r"|(?:#Error)"  # Error Message
-    r")\n"  # All responses are newline terminated
+    r")\n?$"  # Optional trailing newline, anchored to end of line
 )
+# The trailing newline must stay OPTIONAL: scrapli's `_process_read_buf`
+# partitions the read buffer on the first newline and hands the regex only the
+# remainder, so by the time a single-line response is searched its terminating
+# newline has already been stripped. Requiring `\n` here makes the prompt never
+# match and every read blocks until the transport times out.

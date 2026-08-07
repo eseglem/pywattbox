@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import re
 from collections.abc import Callable
 from io import BytesIO
 from typing import Any
 
 from scrapli.decorators import timeout_modifier
 from scrapli.driver import AsyncDriver
-from scrapli.exceptions import ScrapliConnectionNotOpened
+from scrapli.exceptions import ScrapliAuthenticationFailed, ScrapliConnectionNotOpened
 from scrapli.response import Response
 
 from . import PROMPTS
@@ -17,10 +19,60 @@ logger = logging.getLogger("pywattbox.async_driver")
 # Transports that do not echo the command back before the response.
 NON_ECHOING_TRANSPORTS = ("telnet", "asynctelnet")
 
+# Login prompts emitted by the WattBox Integration Protocol. Neither is
+# newline-terminated, so they only ever appear at the very end of the buffer.
+LOGIN_PROMPT = re.compile(rb"username:\s*$", flags=re.I | re.M)
+PASSWORD_PROMPT = re.compile(rb"password:\s*$", flags=re.I | re.M)
+
+
+async def _read_until(channel: Any, pattern: re.Pattern[bytes], timeout: float) -> bytes:
+    """Read from the channel until `pattern` matches, without writing anything."""
+
+    async def _reader() -> bytes:
+        buf = b""
+        while True:
+            buf += await channel.read()
+            if pattern.search(buf):
+                return buf
+
+    try:
+        return await asyncio.wait_for(_reader(), timeout=timeout)
+    except asyncio.TimeoutError as err:
+        raise ScrapliAuthenticationFailed(
+            f"timed out waiting for {pattern.pattern!r} during WattBox login"
+        ) from err
+
 
 async def on_open(driver: WattBoxAsyncDriver) -> None:
-    # if driver.transport_name not in ("telnet", "asynctelnet"):
     logger.debug("On Open")
+
+    if driver.transport_name in NON_ECHOING_TRANSPORTS:
+        # We drive the login ourselves (see `auth_bypass` in __init__).
+        #
+        # scrapli's in-channel telnet auth periodically writes an unsolicited
+        # return character to "kick" devices that need prompting. The WattBox
+        # treats *every* newline as a submitted field, so a kick sent before the
+        # banner arrives is consumed as an empty username: the device then jumps
+        # straight to the password prompt and the real username is submitted as
+        # the password, yielding `Invalid Login`. The banner takes ~1.0s on a
+        # WB-800VPS-IPVM-12 while scrapli's default kick interval is
+        # timeout_ops/10 = 0.5s, so this happened on every connection.
+        #
+        # Reading without writing keeps the device's field-by-field state
+        # machine in step, and does not depend on response timing.
+        timeout = getattr(driver, "timeout_ops", 30.0) or 30.0
+
+        logger.debug("Waiting for username prompt")
+        await _read_until(driver.channel, LOGIN_PROMPT, timeout)
+        driver.channel.write(channel_input=driver.auth_username)
+        driver.channel.send_return()
+
+        logger.debug("Waiting for password prompt")
+        await _read_until(driver.channel, PASSWORD_PROMPT, timeout)
+        driver.channel.write(channel_input=driver.auth_password, redacted=True)
+        driver.channel.send_return()
+
+    # Consumes the post-login banner (`Successfully Logged In!`).
     await driver.channel._read_until_prompt()
 
 
@@ -60,6 +112,11 @@ class WattBoxAsyncDriver(AsyncDriver):
         channel_lock: bool = True,
         logging_uid: str = "",
     ) -> None:
+        if transport in NON_ECHOING_TRANSPORTS:
+            # Skip scrapli's in-channel telnet auth; `on_open` performs the
+            # login instead. See the comment there for why.
+            auth_bypass = True
+
         super().__init__(
             host=host,
             port=port,
