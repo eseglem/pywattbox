@@ -14,6 +14,9 @@ from . import PROMPTS
 
 logger = logging.getLogger("pywattbox.async_driver")
 
+# Transports that do not echo the command back before the response.
+NON_ECHOING_TRANSPORTS = ("telnet", "asynctelnet")
+
 
 async def on_open(driver: WattBoxAsyncDriver) -> None:
     # if driver.transport_name not in ("telnet", "asynctelnet"):
@@ -116,6 +119,11 @@ class WattBoxAsyncDriver(AsyncDriver):
 
         logger.debug("Sending Command: %s", command)
 
+        # `self.transport` is the transport *instance*; comparing it against
+        # transport name strings is never equal, so these checks used to be
+        # unconditionally true. `self.transport_name` is the string.
+        expects_echo = self.transport_name not in NON_ECHOING_TRANSPORTS
+
         # Normally handled in the channel `send_input`, but WattBox is special and doesn't work
         # with that function. Pulled it all into the Driver for simplicity.
         async with self.channel._channel_lock():
@@ -126,20 +134,14 @@ class WattBoxAsyncDriver(AsyncDriver):
             logger.debug("raw_response: %s", raw_response)
             split_response = raw_response.strip().splitlines()
             logger.debug("split_response: %s", split_response)
-            if (
-                self.transport not in ("telnet", "asynctelnet")
-                and len(split_response) < 2
-            ):
+            if expects_echo and len(split_response) < 2:
                 logger.debug("Not enough lines: %s. Getting more", len(split_response))
                 raw_response += await self.channel._read_until_prompt()
                 logger.debug("raw_response: %s", raw_response)
                 split_response = raw_response.strip().splitlines()
                 logger.debug("split_response: %s", split_response)
 
-        if (
-            self.transport not in ("telnet", "asynctelnet")
-            and split_response[0] != command.encode()
-        ):
+        if expects_echo and split_response[0] != command.encode():
             logger.error("Doesn't match command: %s - %s", command, split_response[0])
 
         if command.startswith("?"):
@@ -149,7 +151,10 @@ class WattBoxAsyncDriver(AsyncDriver):
                     command,
                     split_response[-1],
                 )
-            processed_response = split_response[1].split(b"=")[-1]
+            # Use the last line rather than index 1. Devices that echo put the
+            # reply there too, but non-echoing units (WB-800 series over telnet)
+            # return a single line and index 1 raised IndexError on every command.
+            processed_response = split_response[-1].split(b"=")[-1]
         else:
             processed_response = split_response[-1]
 
