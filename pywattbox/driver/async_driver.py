@@ -25,7 +25,9 @@ LOGIN_PROMPT = re.compile(rb"username:\s*$", flags=re.I | re.M)
 PASSWORD_PROMPT = re.compile(rb"password:\s*$", flags=re.I | re.M)
 
 
-async def _read_until(channel: Any, pattern: re.Pattern[bytes], timeout: float) -> bytes:
+async def _read_until(
+    channel: Any, pattern: re.Pattern[bytes], timeout: float
+) -> bytes:
     """Read from the channel until `pattern` matches, without writing anything."""
 
     async def _reader() -> bytes:
